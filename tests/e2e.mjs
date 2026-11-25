@@ -146,8 +146,12 @@ try {
   if (shots) await page.screenshot({ path: path.join(shots, 'week-phone.png'), fullPage: true });
   console.log('ok week grid, checked cells:', weekChecked);
 
-  // 8. Chores screen: add a chore with a last-done date.
+  // 8. Edit chores (reached from Edit on the Chores tab): add a chore with a last-done date, rename one.
   await page.locator('a[href="#chores"]:visible').first().click();
+  await page.getByRole('heading', { name: 'Chores' }).waitFor();
+  assert.equal(await page.getByRole('button', { name: '+ Add chore' }).count(), 0);
+  await page.getByRole('link', { name: 'Edit chores' }).click();
+  await page.getByRole('heading', { name: 'Edit chores' }).waitFor();
   await page.getByRole('button', { name: '+ Add chore' }).click();
   await page.getByPlaceholder('e.g. Clean the fridge').fill('Descale kettle');
   await page.locator('.add-form').getByLabel('Zone').fill('Kitchen');
@@ -157,11 +161,23 @@ try {
   await synced();
   assert.ok(rows('Chores').some((r) => r[1] === 'Descale kettle' && r[3] === '30'));
   assert.ok(rows('ChoreLog').some((r) => r[1] === '2026-11-01'));
-  if (shots) await page.screenshot({ path: path.join(shots, 'chores-phone.png'), fullPage: true });
-  console.log('ok add chore');
+  await page.locator('li.chore-edit', { hasText: 'Wash towels' }).getByRole('button', { name: 'Edit' }).click();
+  await page.locator('li.chore-edit.open input[type=number]').fill('4');
+  await page.locator('li.chore-edit.open').getByRole('button', { name: 'Save' }).click();
+  await synced();
+  assert.ok(rows('Chores').some((r) => r[1] === 'Wash towels' && r[3] === '4'));
+  if (shots) await page.screenshot({ path: path.join(shots, 'chores-edit-phone.png'), fullPage: true });
+  await page.getByRole('link', { name: 'Back' }).click();
+  await page.getByText('Descale kettle').waitFor();
+  console.log('ok edit chores: add, change interval');
 
-  // 9. Settings: rename, reorder, add, archive a habit.
+  // 9. Edit habits (reached from Edit on Today): rename, reorder, add, archive. Settings has no habit list now.
   await page.locator('a[href="#settings"]:visible').first().click();
+  await page.getByRole('heading', { name: 'Settings' }).waitFor();
+  assert.equal(await page.locator('li.habit-edit').count(), 0);
+  await page.locator('a[href="#today"]:visible').first().click();
+  await page.getByRole('link', { name: 'Edit habits' }).click();
+  await page.getByRole('heading', { name: 'Edit habits' }).waitFor();
   const editHabit = (name) => page.locator('li.habit-edit', { hasText: name }).getByRole('button', { name: 'Edit' }).click();
   await editHabit('Drink water');
   await page.locator('li.habit-edit.open input.grow').fill('Drink more water');
@@ -181,8 +197,8 @@ try {
   await page.getByRole('button', { name: 'Archive Tidy desk' }).click();
   await synced();
   assert.ok(rows('Routines').find((r) => r[1] === 'Tidy desk')[4]);
-  if (shots) await page.screenshot({ path: path.join(shots, 'settings-phone.png'), fullPage: true });
-  console.log('ok settings: rename, reorder, add, archive');
+  if (shots) await page.screenshot({ path: path.join(shots, 'habits-edit-phone.png'), fullPage: true });
+  console.log('ok edit habits: rename, reorder, add, archive');
 
   // 10. Progress and CSV export.
   await page.locator('a[href="#progress"]:visible').first().click();

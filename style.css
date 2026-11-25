@@ -122,6 +122,8 @@ h1 { font-size: 1.75rem; line-height: 1.15; margin: 0; }
   .sidenav a { text-decoration: none; color: var(--fg); padding: 9px 12px; border-radius: 8px; font-weight: 550; }
   .sidenav a:hover { background: var(--surface-2); }
   .sidenav a[aria-current="page"] { background: var(--accent-tint); color: var(--accent); }
+  .sidenav .nav-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 16px 12px 4px; }
+  .sidenav .nav-settings { margin-top: 12px; }
   .sync-line {
     margin-top: auto; display: flex; align-items: center; gap: 8px; text-align: left;
     background: none; border: 0; padding: 8px 12px; color: var(--muted); font-size: 0.85rem; cursor: pointer;
@@ -146,6 +148,10 @@ h1 { font-size: 1.75rem; line-height: 1.15; margin: 0; }
 .icon-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--fg); }
 .icon-btn:disabled { opacity: 0.3; cursor: default; }
 .gear { font-size: 1.25rem; }
+.edit-link { color: var(--accent); font-weight: 600; text-decoration: none; padding: 6px 10px; border-radius: 8px; }
+.edit-link:hover { background: var(--accent-tint); }
+.topbar .back { text-decoration: none; margin-left: -6px; }
+.item-name { display: grid; }
 .subtitle { margin: 0 0 16px; color: var(--muted); min-height: 1.45em; }
 .subtitle .linklike { font-size: 1rem; }
 
