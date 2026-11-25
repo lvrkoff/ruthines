@@ -2,7 +2,7 @@ import * as L from './logic.js';
 import * as S from './store.js';
 import { DEMO_URL, resetDemo } from './demo.js';
 
-export const VERSION = '1.4.0';
+export const VERSION = '1.4.1';
 
 const state = {
   config: null, // { url, key } — stored only on this device
@@ -442,7 +442,6 @@ function HabitDetails(r, t) {
   const from = L.addDays(t, -29);
   const done30 = L.dateRange(from, t).filter((d) => L.isDone(view, d, r.id)).length;
   return h('div', { class: 'details' },
-    h('p', { class: 'details-name' }, r.name),
     h('p', null, streak ? 'Streak: ' + plural(streak, 'day') : 'No streak right now'),
     h('p', null, last ? 'Last done ' + (last === t ? 'today' : L.prettyDate(last)) : 'Not done in the last 90 days'),
     h('p', { class: 'muted' }, 'Done on ' + done30 + ' of the last 30 days'));
