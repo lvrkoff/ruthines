@@ -1,22 +1,35 @@
 import * as L from './logic.js';
 import * as S from './store.js';
+import { DEMO_URL, resetDemo } from './demo.js';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.1.0';
+
+/** Font and accent styles, chosen per device in Settings. */
+export const STYLES = [
+  { id: 'clay', name: 'Clay', font: 'Manrope', note: 'Rounded sans, terracotta' },
+  { id: 'ink', name: 'Ink', font: 'Space Grotesk', note: 'Geometric sans, indigo' },
+  { id: 'grove', name: 'Grove', font: 'Fraunces + Figtree', note: 'Serif headings, teal' },
+];
 
 const state = {
   config: null, // { url, key } — stored only on this device
   data: null, // last data returned by the script
   outbox: [], // changes not yet confirmed by the script
-  settings: { dayStart: 4 },
+  settings: { dayStart: 4, style: 'clay' },
   lastSync: '',
   lastError: '',
   syncing: false,
   viewDate: null, // Today screen: day being viewed (null = today)
   weekDate: null, // Week screen: any day in the week being viewed
-  progressRange: '12w',
-  allData: null, // Progress "All": full history, fetched on demand
-  allError: '',
-  allLoading: false,
+  zone: '', // Chores screen: zone filter ('' = all)
+  openChore: '', // Chores screen: chore being edited
+  addingChore: false,
+  openHabit: '', // Settings: habit being edited
+  progressRange: '8w',
+  openStat: '', // Progress: habit whose calendar is open
+  ext: null, // { since, data }: older history, fetched on demand for long ranges
+  extError: '',
+  extLoading: false,
 };
 let view = L.buildView(null, []);
 
@@ -40,6 +53,20 @@ function h(tag, attrs, ...children) {
 
 const today = () => L.logicalDay(new Date(), state.settings.dayStart);
 const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+const isDemo = () => state.config && state.config.url === DEMO_URL;
+const label = (r, icons) => (icons && r.icon ? r.icon + ' ' : '') + r.name;
+
+function applyStyle() {
+  const s = STYLES.some((x) => x.id === state.settings.style) ? state.settings.style : 'clay';
+  document.documentElement.dataset.style = s;
+}
+
+function setStyle(id) {
+  state.settings.style = id;
+  S.save('settings', state.settings);
+  applyStyle();
+  render(true);
+}
 
 /* ---------- state changes ---------- */
 
@@ -140,7 +167,15 @@ function render(force) {
   }
   const tab = currentTab();
   const screens = { today: TodayView, week: WeekView, chores: ChoresView, progress: ProgressView, settings: SettingsView };
-  app.replaceChildren(Nav(tab), h('main', null, screens[tab]()));
+  const y = app.dataset.tab === tab ? window.scrollY : 0;
+  app.dataset.tab = tab;
+  app.replaceChildren(...[
+    isDemo() && DemoBar(),
+    h('div', { class: 'shell' },
+      SideNav(tab),
+      h('main', { class: 'screen screen-' + tab }, screens[tab]())),
+    TabBar(tab)].filter(Boolean));
+  window.scrollTo(0, y);
   renderStatus();
 }
 
@@ -153,12 +188,34 @@ function currentTab() {
   return TABS.some(([id]) => id === t) ? t : 'today';
 }
 
-function Nav(tab) {
-  return h('header', null,
-    h('nav', null, TABS.map(([id, label]) =>
-      h('a', { href: '#' + id, 'aria-current': id === tab ? 'page' : null }, label))),
-    h('button', { id: 'status', class: 'linklike', title: 'Sync now', onclick: () => sync() }),
-  );
+/* ---------- chrome: navigation, sync dot ---------- */
+
+function SideNav(tab) {
+  return h('aside', { class: 'sidenav' },
+    h('div', { class: 'brand' }, 'Ruthines'),
+    h('nav', null, TABS.map(([id, text]) =>
+      h('a', { href: '#' + id, 'aria-current': id === tab ? 'page' : null }, text))),
+    h('button', { class: 'sync-line', onclick: () => sync() }, SyncDot(), h('span', { class: 'sync-text' })));
+}
+
+function TabBar(tab) {
+  return h('nav', { class: 'tabbar' }, TABS.slice(0, 4).map(([id, text]) =>
+    h('a', { href: '#' + id, 'aria-current': id === tab ? 'page' : null }, text)));
+}
+
+function SyncDot() {
+  return h('span', { class: 'dot sync-dot', 'aria-hidden': 'true' });
+}
+
+/** Top row of a screen: optional ‹ › around a title, then the sync dot and gear. */
+function TopBar(title, nav) {
+  return h('div', { class: 'topbar' },
+    nav && h('button', { class: 'icon-btn', onclick: nav.prev, 'aria-label': nav.prevLabel }, '‹'),
+    h('h1', null, title),
+    nav && h('button', { class: 'icon-btn', onclick: nav.next, disabled: nav.atEnd, 'aria-label': nav.nextLabel }, '›'),
+    h('span', { class: 'spacer' }),
+    h('button', { class: 'icon-btn sync-btn', onclick: () => sync(), title: 'Sync now' }, SyncDot()),
+    h('a', { class: 'icon-btn gear', href: '#settings', 'aria-label': 'Settings' }, '⚙'));
 }
 
 function statusText() {
@@ -171,10 +228,43 @@ function statusText() {
 }
 
 function renderStatus() {
-  const el = document.getElementById('status');
-  if (!el) return;
-  el.textContent = statusText();
-  el.classList.toggle('warn', !!state.lastError || state.outbox.length > 0);
+  const level = state.syncing ? 'busy' : state.lastError ? 'error' : state.outbox.length ? 'pending' : 'ok';
+  const text = statusText();
+  document.querySelectorAll('.sync-dot').forEach((el) => { el.dataset.level = level; });
+  document.querySelectorAll('.sync-btn').forEach((el) => {
+    el.setAttribute('aria-label', 'Sync now. ' + text);
+    el.title = text;
+  });
+  document.querySelectorAll('.sync-text').forEach((el) => { el.textContent = text; });
+}
+
+function DemoBar() {
+  return h('div', { class: 'demobar' },
+    h('span', null, 'Demo with sample data'),
+    h('span', { class: 'demo-styles' }, 'Style:',
+      STYLES.map((s) => h('button', {
+        class: 'chip small' + (state.settings.style === s.id ? ' on' : ''),
+        'aria-pressed': String(state.settings.style === s.id),
+        onclick: () => setStyle(s.id),
+      }, s.name))),
+    h('button', { class: 'linklike', onclick: exitDemo }, 'Exit'));
+}
+
+async function exitDemo() {
+  resetDemo();
+  Object.assign(state, { config: null, data: null, outbox: [], lastSync: '', lastError: '', ext: null });
+  await Promise.all(['config', 'data', 'outbox', 'lastSync'].map((k) => S.save(k, undefined)));
+  history.replaceState(null, '', location.pathname);
+  render(true);
+}
+
+async function startDemo() {
+  const config = { url: DEMO_URL, key: 'demo' };
+  const res = await S.fetchData(config);
+  Object.assign(state, { config, data: res.data, outbox: [], lastSync: new Date().toISOString(), lastError: '' });
+  await Promise.all([S.save('config', config), S.save('data', res.data), S.save('outbox', []), S.save('lastSync', state.lastSync)]);
+  location.hash = '#today';
+  render(true);
 }
 
 /* ---------- Connect ---------- */
@@ -183,7 +273,7 @@ function ConnectView() {
   const msg = h('p', { class: 'msg', role: 'status' });
   const url = h('input', { type: 'url', name: 'url', required: true, autocomplete: 'off', placeholder: 'https://script.google.com/macros/s/…/exec' });
   const key = h('input', { type: 'password', name: 'key', required: true, autocomplete: 'off' });
-  const btn = h('button', { type: 'submit' }, 'Connect');
+  const btn = h('button', { type: 'submit', class: 'btn primary' }, 'Connect');
   const form = h('form', {
     onsubmit: async (e) => {
       e.preventDefault();
@@ -210,15 +300,16 @@ function ConnectView() {
       }
     },
   },
-  h('label', null, 'Script URL', url),
-  h('label', null, 'Key', key),
+  h('label', null, h('span', { class: 'label' }, 'Script URL'), url),
+  h('label', null, h('span', { class: 'label' }, 'Key'), key),
   btn, msg);
 
   return h('main', { class: 'connect' },
-    h('h1', null, 'Ruthines'),
+    h('div', { class: 'brand big' }, 'Ruthines'),
     h('p', null, 'Connect this device to your Ruthines Sheet once. Paste the Web app URL of your Apps Script and the key that setup() printed.'),
-    h('p', { class: 'muted' }, 'Both are stored only on this device and sent only to your script.'),
-    form);
+    h('p', { class: 'muted small' }, 'Both are stored only on this device and sent only to your script.'),
+    form,
+    h('p', { class: 'muted small' }, 'Just looking? ', h('button', { class: 'linklike accent', onclick: startDemo }, 'Try it with sample data')));
 }
 
 /* ---------- Today ---------- */
@@ -231,50 +322,54 @@ function TodayView() {
     state.viewDate = next >= t ? null : next;
     render(true);
   };
+  const icons = L.showIcons(view);
   const doneCount = view.routines.filter((r) => L.isDone(view, d, r.id)).length;
+  const total = view.routines.length;
   const chores = L.choresForToday(view, d);
 
-  return h('div', null,
-    h('div', { class: 'daynav' },
-      h('button', { onclick: () => go(-1), 'aria-label': 'Previous day' }, '‹'),
-      h('h1', null, d === t ? 'Today' : L.prettyDate(d)),
-      h('button', { onclick: () => go(1), disabled: d >= t, 'aria-label': 'Next day' }, '›'),
-      d !== t && h('button', { class: 'linklike', onclick: () => { state.viewDate = null; render(true); } }, 'Back to today'),
-    ),
-    d === t && h('p', { class: 'muted' }, L.prettyDate(d)),
-    d < view.since && h('p', { class: 'muted' }, 'This day is older than the 90 days kept on this device, so earlier ticks may not show.'),
+  return [
+    TopBar(d === t ? 'Today' : L.prettyDate(d), {
+      prev: () => go(-1), next: () => go(1), atEnd: d >= t, prevLabel: 'Previous day', nextLabel: 'Next day',
+    }),
+    h('p', { class: 'subtitle' }, d === t ? L.prettyDate(d) : h('button', { class: 'linklike accent', onclick: () => { state.viewDate = null; render(true); } }, 'Back to today')),
+    d < view.since && h('p', { class: 'note' }, 'This day is older than the 90 days kept on this device, so earlier ticks may not show.'),
+    total > 0 && h('div', { class: 'progress' },
+      h('div', { class: 'progress-text' }, doneCount + ' of ' + total + ' done'),
+      h('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': total, 'aria-valuenow': doneCount },
+        h('span', { style: 'width:' + (100 * doneCount / total) + '%' }))),
     h('div', { class: 'columns' },
       h('section', null,
-        h('h2', null, 'Habits ', h('span', { class: 'muted' }, doneCount + '/' + view.routines.length)),
-        view.routines.length
-          ? h('ul', { class: 'habits' }, view.routines.map((r) =>
-            h('li', null, h('label', { class: 'habit' },
-              h('input', { type: 'checkbox', checked: L.isDone(view, d, r.id), onchange: () => toggleHabit(d, r.id) }),
-              h('span', null, r.icon ? r.icon + ' ' : '', r.name)))))
-          : h('p', { class: 'muted' }, 'No habits yet. Add them in Settings or the Routines tab of the Sheet.'),
+        h('h2', { class: 'section-label' }, 'Habits'),
+        total
+          ? h('ul', { class: 'rows' }, view.routines.map((r) => {
+            const done = L.isDone(view, d, r.id);
+            return h('li', null, h('label', { class: 'habit' + (done ? ' done' : '') },
+              h('input', { type: 'checkbox', class: 'tick', checked: done, onchange: () => toggleHabit(d, r.id) }),
+              h('span', { class: 'habit-name' }, label(r, icons))));
+          }))
+          : h('p', { class: 'empty' }, 'No habits yet. Add them in ', h('a', { href: '#settings' }, 'Settings'), ' or the Routines tab of the Sheet.'),
       ),
       h('section', null,
-        h('h2', null, 'Chores due'),
+        h('h2', { class: 'section-label' }, 'Chores due'),
         chores.length
-          ? h('ul', { class: 'chores' }, chores.map(({ chore, s }) => ChoreRow(chore, s, d)))
-          : h('p', { class: 'muted' }, 'Nothing due in the next 2 days. ', h('a', { href: '#chores' }, 'All chores')),
+          ? h('ul', { class: 'rows' }, chores.map(({ chore, s }) => TodayChore(chore, s, d)))
+          : h('p', { class: 'empty' }, 'Nothing due in the next 2 days. ', h('a', { href: '#chores' }, 'All chores')),
       ),
     ),
-  );
+  ];
 }
 
-function ChoreRow(chore, s, d) {
+function TodayChore(chore, s, d) {
   const done = view.choreLog.has(chore.id + '|' + d);
-  return h('li', { class: 'chore' },
-    h('div', null,
-      h('strong', null, chore.name),
-      chore.zone && h('span', { class: 'muted' }, ' · ' + chore.zone),
-      h('div', null, done ? h('span', { class: 'status done' }, 'done') : h('span', { class: 'status ' + s.level }, s.label)),
-    ),
+  const sub = [done ? 'done' : s.label, chore.zone].filter(Boolean).join(' · ');
+  return h('li', { class: 'chore' + (done ? ' done' : '') },
+    h('span', { class: 'dot status-' + (done ? 'done' : s.last ? s.level : 'never') }),
+    h('div', { class: 'chore-main' },
+      h('div', { class: 'chore-name' }, chore.name),
+      h('div', { class: 'chore-sub' }, sub)),
     done
-      ? h('button', { onclick: () => choreUndo(chore.id, d) }, 'Undo')
-      : h('button', { onclick: () => choreDone(chore.id, d) }, 'Done'),
-  );
+      ? h('button', { class: 'btn ghost', onclick: () => choreUndo(chore.id, d) }, 'Undo')
+      : h('button', { class: 'btn outline', onclick: () => choreDone(chore.id, d) }, 'Done'));
 }
 
 /* ---------- Week ---------- */
@@ -282,184 +377,205 @@ function ChoreRow(chore, s, d) {
 function WeekView() {
   const t = today();
   const ws = L.weekStart(state.weekDate || t);
-  const days = L.dateRange(ws, L.addDays(ws, 6));
+  const we = L.addDays(ws, 6);
+  const days = L.dateRange(ws, we);
   const move = (n) => {
     const next = L.addDays(ws, 7 * n);
     state.weekDate = next > t ? null : next;
     render(true);
   };
   const isThisWeek = ws === L.weekStart(t);
+  const icons = L.showIcons(view);
+  const past = days.filter((d) => d <= t);
+  const ticks = past.reduce((sum, d) => sum + view.routines.filter((r) => L.isDone(view, d, r.id)).length, 0);
+  const range = L.shortDate(ws) + ' – ' + L.shortDate(we);
 
-  return h('div', null,
-    h('div', { class: 'daynav' },
-      h('button', { onclick: () => move(-1), 'aria-label': 'Previous week' }, '‹'),
-      h('h1', null, isThisWeek ? 'This week' : 'Week of ' + L.shortDate(ws)),
-      h('button', { onclick: () => move(1), disabled: isThisWeek, 'aria-label': 'Next week' }, '›'),
-      !isThisWeek && h('button', { class: 'linklike', onclick: () => { state.weekDate = null; render(true); } }, 'This week'),
-    ),
-    days[6] < view.since && h('p', { class: 'muted' }, 'This week is older than the 90 days kept on this device, so earlier ticks may not show.'),
-    h('div', { class: 'scroll' },
+  return [
+    TopBar('W' + L.isoWeek(ws), {
+      prev: () => move(-1), next: () => move(1), atEnd: isThisWeek, prevLabel: 'Previous week', nextLabel: 'Next week',
+    }),
+    h('p', { class: 'subtitle' }, range, !isThisWeek && ' · ',
+      !isThisWeek && h('button', { class: 'linklike accent', onclick: () => { state.weekDate = null; render(true); } }, 'This week')),
+    we < view.since && h('p', { class: 'note' }, 'This week is older than the 90 days kept on this device, so earlier ticks may not show.'),
+    h('div', { class: 'grid-wrap' },
       h('table', { class: 'grid' },
         h('thead', null, h('tr', null,
-          h('th', { class: 'name' }, 'Habit'),
-          days.map((d) => h('th', { class: d === t ? 'today' : null }, L.weekdayName(d).slice(0, 2), h('br'), L.parseDate(d).getDate())),
-          h('th', null, 'Done'))),
+          h('th', { class: 'name' }, h('span', { class: 'sr-only' }, 'Habit')),
+          days.map((d) => h('th', { class: d === t ? 'today' : null, title: L.prettyDate(d) },
+            L.weekdayName(d).slice(0, 1), h('span', { class: 'daynum' }, L.parseDate(d).getDate()))),
+          h('th', { class: 'count' }, '/7'))),
         h('tbody', null, view.routines.map((r) => {
           const n = days.filter((d) => L.isDone(view, d, r.id)).length;
           return h('tr', null,
-            h('th', { class: 'name', scope: 'row' }, r.icon ? r.icon + ' ' : '', r.name),
+            h('th', { class: 'name', scope: 'row' }, label(r, icons)),
             days.map((d) => h('td', { class: d === t ? 'today' : null },
               h('input', {
-                type: 'checkbox', checked: L.isDone(view, d, r.id), disabled: d > t,
+                type: 'checkbox', class: 'tick small' + (d > t ? ' future' : ''), checked: L.isDone(view, d, r.id), disabled: d > t,
                 'aria-label': r.name + ', ' + L.prettyDate(d), onchange: () => toggleHabit(d, r.id),
               }))),
-            h('td', { class: 'num' }, n + '/7'));
+            h('td', { class: 'count' }, n));
         })),
-        h('tfoot', null, h('tr', null,
-          h('th', { class: 'name' }, 'Total'),
-          days.map((d) => h('td', { class: 'num' }, d > t ? '' : view.routines.filter((r) => L.isDone(view, d, r.id)).length)),
-          h('td', { class: 'num' }, days.reduce((sum, d) => sum + view.routines.filter((r) => L.isDone(view, d, r.id)).length, 0)))),
       ),
     ),
-  );
+    h('p', { class: 'muted small foot' },
+      (isThisWeek ? 'Week so far: ' : 'Week total: ') + ticks + ' of ' + past.length * view.routines.length + ' possible'),
+  ];
 }
 
 /* ---------- Chores ---------- */
 
-const LEVEL_TEXT = { overdue: 'Overdue', soon: 'Due within 2 days', week: 'Due within a week', fine: 'Fine' };
+/** "3 d late", "today", "in 2 d", "set up" — the short due text on the right. */
+function dueShort(s) {
+  if (!s.last) return 'not done yet';
+  if (!s.every) return 'no interval';
+  if (s.daysLeft < 0) return -s.daysLeft + ' d late';
+  if (s.daysLeft === 0) return 'today';
+  return 'in ' + s.daysLeft + ' d';
+}
 
 function ChoresView() {
   const t = today();
-  const list = L.choresWithStatus(view, t);
-  // Group by zone; zones ordered by their most urgent chore.
-  const zones = new Map();
-  for (const x of list) {
-    const z = x.chore.zone || 'No zone';
-    if (!zones.has(z)) zones.set(z, []);
-    zones.get(z).push(x);
-  }
-  const zoneNames = [...new Set(view.allChores.map((c) => c.zone).filter(Boolean))].sort();
-  const counts = { overdue: 0, soon: 0 };
-  list.forEach(({ s }) => { if (s.level in counts && !s.doneToday) counts[s.level]++; });
+  const zones = [...new Set(view.chores.map((c) => c.zone).filter(Boolean))].sort();
+  const zone = zones.includes(state.zone) ? state.zone : '';
+  const list = L.choresWithStatus(view, t).filter(({ chore }) => !zone || chore.zone === zone);
+  const allZones = [...new Set(view.allChores.map((c) => c.zone).filter(Boolean))].sort();
+  const setZone = (z) => { state.zone = z; render(true); };
 
-  return h('div', null,
-    h('h1', null, 'Chores'),
+  return [
+    TopBar('Chores'),
+    zones.length > 0 && h('div', { class: 'chips', role: 'group', 'aria-label': 'Zone' },
+      h('button', { class: 'chip' + (zone ? '' : ' on'), 'aria-pressed': String(!zone), onclick: () => setZone('') }, 'All'),
+      zones.map((z) => h('button', { class: 'chip' + (zone === z ? ' on' : ''), 'aria-pressed': String(zone === z), onclick: () => setZone(z) }, z))),
     list.length
-      ? h('p', { class: 'muted' }, plural(counts.overdue, 'chore') + ' overdue, ' + counts.soon + ' due within 2 days.')
-      : h('p', { class: 'muted' }, 'No chores yet. Add one below, or type them into the Chores tab of the Sheet.'),
-    [...zones].map(([zone, items]) => h('section', null,
-      h('h2', null, zone),
-      h('ul', { class: 'chores' }, items.map(({ chore, s }) => ChoreCard(chore, s, t, zoneNames))))),
-    AddChoreForm(zoneNames),
-    view.archivedChores.length > 0 && h('details', null,
-      h('summary', null, 'Archived chores (' + view.archivedChores.length + ')'),
-      h('ul', { class: 'plain' }, view.archivedChores.map((c) => h('li', null, c.name + ' ',
-        h('button', { onclick: () => choreOp(c, { archived: '' }) }, 'Restore'))))),
-    h('datalist', { id: 'zones' }, zoneNames.map((z) => h('option', { value: z }))),
-  );
+      ? h('ul', { class: 'rows' }, list.map(({ chore, s }) => ChoreRow(chore, s, t, allZones)))
+      : h('p', { class: 'empty' }, view.chores.length ? 'No chores in this zone.' : 'No chores yet. Add one below, or type them into the Chores tab of the Sheet.'),
+    AddChore(allZones),
+    view.archivedChores.length > 0 && h('details', { class: 'archived' },
+      h('summary', null, plural(view.archivedChores.length, 'archived chore')),
+      h('ul', { class: 'rows' }, view.archivedChores.map((c) => h('li', { class: 'plain-row' },
+        h('span', null, c.name),
+        h('button', { class: 'btn ghost', onclick: () => choreOp(c, { archived: '' }) }, 'Restore'))))),
+    h('datalist', { id: 'zones' }, allZones.map((z) => h('option', { value: z }))),
+  ];
 }
 
-function ChoreCard(chore, s, t) {
+function ChoreRow(chore, s, t) {
   const doneToday = view.choreLog.has(chore.id + '|' + t);
+  const open = state.openChore === chore.id;
+  const sub = [
+    s.every ? 'every ' + s.every + ' d' : '',
+    s.last ? 'done ' + L.shortDate(s.last) : 'never done yet',
+    chore.zone && !state.zone ? chore.zone : '',
+  ].filter(Boolean).join(' · ');
+  const toggle = () => { state.openChore = open ? '' : chore.id; render(true); };
+
+  return h('li', { class: 'chore' + (open ? ' open' : '') + (doneToday ? ' done' : '') },
+    h('span', { class: 'dot status-' + (doneToday ? 'done' : s.last ? s.level : 'never') }),
+    h('button', { class: 'chore-main as-button', onclick: toggle, 'aria-expanded': String(open) },
+      h('span', { class: 'chore-name' }, chore.name),
+      h('span', { class: 'chore-sub' }, sub)),
+    h('div', { class: 'chore-side' },
+      h('span', { class: 'due status-text-' + (doneToday ? 'done' : s.last ? s.level : 'never') }, doneToday ? 'done today' : dueShort(s)),
+      doneToday
+        ? h('button', { class: 'btn ghost small', onclick: () => choreUndo(chore.id, t) }, 'Undo')
+        : h('button', { class: 'btn outline small', onclick: () => choreDone(chore.id, t) }, 'Done')),
+    open && ChoreEditor(chore, t));
+}
+
+function ChoreEditor(chore, t) {
   const name = h('input', { type: 'text', value: chore.name, required: true });
   const zone = h('input', { type: 'text', value: chore.zone || '', list: 'zones' });
   const every = h('input', { type: 'number', min: 1, step: 1, value: chore.every_days || '', class: 'short' });
   const when = h('input', { type: 'date', max: t, value: L.addDays(t, -1) });
-  const facts = [
-    s.every ? 'every ' + plural(s.every, 'day') : 'no interval set',
-    s.last ? 'last done ' + L.shortDate(s.last) : 'never done',
-    s.next ? 'next ' + L.shortDate(s.next) : '',
-  ].filter(Boolean).join(' · ');
+  const history = [...view.choreLog.values()].filter((r) => r.chore_id === chore.id)
+    .map((r) => r.date).sort().reverse().slice(0, 6);
 
-  return h('li', { class: 'chore card' },
-    h('div', { class: 'row' },
-      h('div', null,
-        h('strong', null, chore.name),
-        h('div', null,
-          doneToday ? h('span', { class: 'status done' }, 'done today') : h('span', { class: 'status ' + s.level, title: LEVEL_TEXT[s.level] }, s.label)),
-        h('div', { class: 'muted small' }, facts)),
-      doneToday
-        ? h('button', { onclick: () => choreUndo(chore.id, t) }, 'Undo')
-        : h('button', { onclick: () => choreDone(chore.id, t) }, 'Done'),
-    ),
-    h('details', null,
-      h('summary', null, 'More'),
-      h('form', {
-        class: 'inline',
-        onsubmit: (e) => {
-          e.preventDefault();
-          if (!when.value) return;
-          choreDone(chore.id, when.value);
-        },
-      }, h('label', null, 'Done on ', when), h('button', null, 'Log')),
-      h('form', {
-        class: 'inline',
-        onsubmit: (e) => {
-          e.preventDefault();
-          if (!name.value.trim()) return;
-          choreOp(chore, { name: name.value.trim(), zone: zone.value.trim(), every_days: every.value });
-        },
-      },
-      h('label', null, 'Name ', name),
-      h('label', null, 'Zone ', zone),
-      h('label', null, 'Every ', every, ' days'),
-      h('button', null, 'Save')),
-      h('button', { onclick: () => choreOp(chore, { archived: t }) }, 'Archive'),
-    ),
-  );
-}
-
-function AddChoreForm() {
-  const name = h('input', { type: 'text', required: true, placeholder: 'e.g. Clean the fridge' });
-  const zone = h('input', { type: 'text', list: 'zones', placeholder: 'e.g. Kitchen' });
-  const every = h('input', { type: 'number', min: 1, step: 1, required: true, class: 'short', value: 7 });
-  const last = h('input', { type: 'date', max: today() });
-  return h('details', { class: 'add' },
-    h('summary', null, 'Add a chore'),
+  return h('div', { class: 'editor' },
     h('form', {
-      class: 'stack',
+      class: 'fields',
       onsubmit: (e) => {
         e.preventDefault();
-        const id = L.newId();
-        choreOp({ id }, { name: name.value.trim(), zone: zone.value.trim(), every_days: every.value });
-        if (last.value) choreDone(id, last.value);
+        if (!name.value.trim()) return;
+        state.openChore = '';
+        choreOp(chore, { name: name.value.trim(), zone: zone.value.trim(), every_days: every.value });
       },
     },
-    h('label', null, 'Name ', name),
-    h('label', null, 'Zone ', zone),
-    h('label', null, 'Every ', every, ' days'),
-    h('label', null, 'Last done (optional) ', last),
-    h('button', null, 'Add chore')));
+    h('label', null, h('span', { class: 'label' }, 'Name'), name),
+    h('label', null, h('span', { class: 'label' }, 'Zone'), zone),
+    h('label', null, h('span', { class: 'label' }, 'Every (days)'), every),
+    h('button', { class: 'btn primary' }, 'Save')),
+    h('form', {
+      class: 'inline',
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (when.value) choreDone(chore.id, when.value);
+      },
+    }, h('span', { class: 'label' }, 'Done on another day'), when, h('button', { class: 'btn outline' }, 'Log')),
+    history.length > 0 && h('p', { class: 'muted small' }, 'Recent: ', history.map(L.shortDate).join(', ')),
+    h('button', { class: 'linklike danger', onclick: () => { state.openChore = ''; choreOp(chore, { archived: t }); } }, 'Archive this chore'));
+}
+
+function AddChore(zones) {
+  if (!state.addingChore) {
+    return h('button', { class: 'add-btn', onclick: () => { state.addingChore = true; render(true); } }, '+ Add chore');
+  }
+  const name = h('input', { type: 'text', required: true, placeholder: 'e.g. Clean the fridge' });
+  const zone = h('input', { type: 'text', list: 'zones', placeholder: zones[0] ? 'e.g. ' + zones[0] : 'e.g. Kitchen' });
+  const every = h('input', { type: 'number', min: 1, step: 1, required: true, class: 'short', value: 7 });
+  const last = h('input', { type: 'date', max: today() });
+  setTimeout(() => name.focus(), 0);
+  return h('form', {
+    class: 'editor add-form',
+    onsubmit: (e) => {
+      e.preventDefault();
+      const id = L.newId();
+      state.addingChore = false;
+      choreOp({ id }, { name: name.value.trim(), zone: zone.value.trim(), every_days: every.value });
+      if (last.value) choreDone(id, last.value);
+    },
+  },
+  h('div', { class: 'fields' },
+    h('label', null, h('span', { class: 'label' }, 'Name'), name),
+    h('label', null, h('span', { class: 'label' }, 'Zone'), zone),
+    h('label', null, h('span', { class: 'label' }, 'Every (days)'), every),
+    h('label', null, h('span', { class: 'label' }, 'Last done (optional)'), last)),
+  h('div', { class: 'buttons' },
+    h('button', { class: 'btn primary' }, 'Add chore'),
+    h('button', { type: 'button', class: 'btn ghost', onclick: () => { state.addingChore = false; render(true); } }, 'Cancel')));
 }
 
 /* ---------- Progress ---------- */
 
-const RANGES = { '4w': ['Last 4 weeks', 28], '12w': ['Last 12 weeks', 84], all: ['All time', 0] };
+const RANGES = { '8w': ['8 weeks', 56], '6m': ['6 months', 182], all: ['All', 0] };
 
-async function loadAll() {
-  state.allLoading = true;
-  state.allError = '';
+async function loadExt(since) {
+  state.extLoading = true;
+  state.extError = '';
   render(true);
   try {
-    const res = await S.fetchData(state.config, '2000-01-01');
-    state.allData = res.data;
+    const res = await S.fetchData(state.config, since);
+    state.ext = { since, data: res.data };
   } catch (e) {
-    state.allError = e.message;
+    state.extError = e.message;
   }
-  state.allLoading = false;
+  state.extLoading = false;
   render(true);
 }
 
 function ProgressView() {
   const t = today();
   const range = state.progressRange;
+  // Long ranges reach past the 90 days kept on the device; fetch that history once.
+  const need = range === 'all' ? '2000-01-01' : L.addDays(t, -(RANGES[range][1] - 1));
   let pv = view;
-  if (range === 'all') {
-    if (!state.allData && !state.allLoading && !state.allError) setTimeout(loadAll, 0);
-    if (state.allData) pv = L.buildView(state.allData, state.outbox);
+  if (need < view.since) {
+    const ok = state.ext && state.ext.since <= need;
+    if (ok) pv = L.buildView(state.ext.data, state.outbox);
+    else if (!state.extLoading && !state.extError) setTimeout(() => loadExt(range === 'all' ? '2000-01-01' : need), 0);
   }
-  const from = range === 'all' ? (L.earliestCheckin(pv) || t) : L.addDays(t, -(RANGES[range][1] - 1));
+  const from = range === 'all' ? (L.earliestCheckin(pv) || t) : need;
   const weeks = L.weeklyTotals(pv, from, t);
+  const icons = L.showIcons(view);
   const rows = pv.routines
     .map((r) => ({ r, rate: L.rate(pv, r.id, from, t), streak: L.streak(pv, r.id, t) }))
     .sort((a, b) => b.rate - a.rate || b.streak - a.streak);
@@ -470,45 +586,50 @@ function ProgressView() {
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   };
+  const setRange = (k) => { state.progressRange = k; state.extError = ''; render(true); };
 
-  return h('div', null,
-    h('h1', null, 'Progress'),
-    h('label', null, 'Range ',
-      h('select', {
-        onchange: (e) => { state.progressRange = e.target.value; render(true); },
-      }, Object.entries(RANGES).map(([k, [label]]) => h('option', { value: k, selected: k === range }, label)))),
-    range === 'all' && state.allLoading && h('p', { class: 'muted' }, 'Loading full history…'),
-    range === 'all' && state.allError && h('p', { class: 'msg' }, 'Could not load full history: ' + state.allError + ' ',
-      h('button', { onclick: loadAll }, 'Retry')),
-    h('section', null,
-      h('h2', null, 'Ticks per week'),
+  return [
+    TopBar('Progress'),
+    h('div', { class: 'chips', role: 'group', 'aria-label': 'Range' },
+      Object.entries(RANGES).map(([k, [text]]) =>
+        h('button', { class: 'chip' + (k === range ? ' on' : ''), 'aria-pressed': String(k === range), onclick: () => setRange(k) }, text))),
+    state.extLoading && h('p', { class: 'note' }, 'Loading older history…'),
+    state.extError && h('p', { class: 'msg' }, 'Could not load older history: ' + state.extError + ' ',
+      h('button', { class: 'linklike accent', onclick: () => { state.extError = ''; render(true); } }, 'Retry')),
+    h('section', { class: 'card' },
+      h('h2', { class: 'section-label' }, 'Ticks per week, all habits'),
       WeeklyChart(weeks, t),
-      h('details', null, h('summary', null, 'Show as table'),
-        h('table', { class: 'plain-table' },
-          h('thead', null, h('tr', null, h('th', null, 'Week of'), h('th', null, 'Ticks'))),
+      h('details', { class: 'quiet' }, h('summary', null, 'Show as table'),
+        h('table', { class: 'data-table' },
+          h('thead', null, h('tr', null, h('th', null, 'Week of'), h('th', { class: 'num' }, 'Ticks'))),
           h('tbody', null, weeks.map((w) => h('tr', null, h('td', null, L.shortDate(w.week)), h('td', { class: 'num' }, w.total))))))),
     h('section', null,
-      h('h2', null, 'By habit'),
-      h('p', { class: 'muted small' }, 'Rate is days done out of days in the range. Streak is days in a row up to today, or up to yesterday if today isn\'t ticked yet.'),
-      h('table', { class: 'plain-table habits-table' },
-        h('thead', null, h('tr', null, h('th', null, 'Habit'), h('th', null, 'Rate'), h('th', null, 'Streak'))),
-        h('tbody', null, rows.map(({ r, rate, streak }) => h('tr', null,
-          h('td', null, h('details', null,
-            h('summary', null, r.icon ? r.icon + ' ' : '', r.name),
-            MiniCalendar(pv, r.id, t))),
-          h('td', { class: 'num' }, Math.round(rate * 100) + '%'),
-          h('td', { class: 'num' }, plural(streak, 'day'))))))),
+      h('h2', { class: 'section-label' }, 'Per habit, ' + (range === 'all' ? 'all time' : 'last ' + RANGES[range][0])),
+      h('ul', { class: 'rows stats' }, rows.map(({ r, rate, streak }) => {
+        const open = state.openStat === r.id;
+        return h('li', { class: 'stat' + (open ? ' open' : '') },
+          h('button', {
+            class: 'as-button stat-main', 'aria-expanded': String(open),
+            onclick: () => { state.openStat = open ? '' : r.id; render(true); },
+          },
+          h('span', { class: 'stat-top' },
+            h('span', { class: 'stat-name' }, label(r, icons)),
+            h('span', { class: 'stat-nums' }, Math.round(rate * 100) + '%, streak ' + streak)),
+          h('span', { class: 'bar' }, h('span', { style: 'width:' + Math.round(rate * 100) + '%' }))),
+          open && MiniCalendar(pv, r.id, t));
+      })),
+      h('p', { class: 'muted small' }, 'Rate is days done out of days in the range. Streak is days in a row up to today, or up to yesterday if today isn\'t ticked yet. Tap a habit for its calendar.')),
     h('section', null,
-      h('h2', null, 'Export'),
-      h('p', { class: 'muted small' }, 'Uses the selected range. Pick "All time" for your full history.'),
+      h('h2', { class: 'section-label' }, 'Export'),
       h('div', { class: 'buttons' },
-        h('button', { onclick: () => download('ruthines-habits-' + t + '.csv', L.habitsCsv(pv, from, t), 'text/csv') }, 'Habits CSV'),
-        h('button', { onclick: () => download('ruthines-chores-' + t + '.csv', L.choresCsv(pv), 'text/csv') }, 'Chores CSV'),
-        h('button', { onclick: () => download('ruthines-backup-' + t + '.json', JSON.stringify(range === 'all' && state.allData ? state.allData : state.data, null, 2), 'application/json') }, 'Backup JSON'))),
-  );
+        h('button', { class: 'btn outline', onclick: () => download('ruthines-habits-' + t + '.csv', L.habitsCsv(pv, from, t), 'text/csv') }, 'Habits CSV'),
+        h('button', { class: 'btn outline', onclick: () => download('ruthines-chores-' + t + '.csv', L.choresCsv(pv), 'text/csv') }, 'Chores CSV'),
+        h('button', { class: 'btn ghost', onclick: () => download('ruthines-backup-' + t + '.json', JSON.stringify(pv === view ? state.data : state.ext.data, null, 2), 'application/json') }, 'Backup JSON')),
+      h('p', { class: 'muted small' }, 'Exports use the range picked above.')),
+  ];
 }
 
-/** Last 5 weeks of one habit, Monday-first, as a small grid. */
+/** Last 5 weeks of one habit, Monday-first. */
 function MiniCalendar(pv, routineId, t) {
   const start = L.addDays(L.weekStart(t), -28);
   const days = L.dateRange(start, L.addDays(L.weekStart(t), 6));
@@ -527,7 +648,7 @@ function MiniCalendar(pv, routineId, t) {
 
 /** Single-series line chart with hover readout. Plain SVG, no library. */
 function WeeklyChart(weeks, t) {
-  if (!weeks.length) return h('p', { class: 'muted' }, 'No data yet.');
+  if (!weeks.length) return h('p', { class: 'empty' }, 'No data yet.');
   const W = 400, H = 180, padL = 28, padR = 12, padT = 12, padB = 26;
   const max = Math.max(4, ...weeks.map((w) => w.total));
   const step = Math.pow(10, Math.floor(Math.log10(max)));
@@ -544,19 +665,22 @@ function WeeklyChart(weeks, t) {
 
   const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', role: 'img', 'aria-label': 'Ticks per week' });
   for (const v of [0, top / 2, top]) {
-    svg.append(s('line', { x1: padL, x2: W - padR, y1: y(v), y2: y(v), class: 'gridline' }));
+    svg.append(s('line', { x1: padL, x2: W - padR, y1: y(v), y2: y(v), class: v ? 'gridline' : 'baseline' }));
     svg.append(s('text', { x: padL - 6, y: y(v) + 4, 'text-anchor': 'end', class: 'axis' }, String(v)));
   }
   const every = Math.ceil(weeks.length / 5);
   weeks.forEach((w, i) => {
-    if (i % every === 0 || i === weeks.length - 1) {
-      svg.append(s('text', { x: x(i), y: H - 8, 'text-anchor': 'middle', class: 'axis' }, L.shortDate(w.week)));
+    if ((weeks.length - 1 - i) % every === 0) { // count from the latest week so it is always labelled
+      svg.append(s('text', { x: x(i), y: H - 8, 'text-anchor': weeks.length > 1 && i === 0 ? 'start' : weeks.length > 1 && i === weeks.length - 1 ? 'end' : 'middle', class: 'axis' }, L.shortDate(w.week)));
     }
   });
-  svg.append(s('polyline', { points: weeks.map((w, i) => x(i) + ',' + y(w.total)).join(' '), class: 'line' }));
-  weeks.forEach((w, i) => svg.append(s('circle', { cx: x(i), cy: y(w.total), r: 4, class: 'dot' })));
+  const pts = weeks.map((w, i) => x(i) + ',' + y(w.total)).join(' ');
+  svg.append(s('polygon', { points: `${x(0)},${y(0)} ${pts} ${x(weeks.length - 1)},${y(0)}`, class: 'area' }));
+  svg.append(s('polyline', { points: pts, class: 'line' }));
+  if (weeks.length <= 26) weeks.forEach((w, i) => svg.append(s('circle', { cx: x(i), cy: y(w.total), r: 3.5, class: 'pt' })));
   const cross = s('line', { y1: padT, y2: H - padB, class: 'cross', visibility: 'hidden' });
-  svg.append(cross);
+  const mark = s('circle', { r: 5, class: 'pt active', visibility: 'hidden' });
+  svg.append(cross, mark);
 
   const tip = h('div', { class: 'tip', hidden: true });
   const wrap = h('div', { class: 'chartwrap' }, svg, tip);
@@ -566,17 +690,22 @@ function WeeklyChart(weeks, t) {
     const px = ((e.clientX - box.left) / box.width) * W;
     let i = 0;
     weeks.forEach((_, j) => { if (Math.abs(x(j) - px) < Math.abs(x(i) - px)) i = j; });
-    cross.setAttribute('x1', x(i));
-    cross.setAttribute('x2', x(i));
-    cross.setAttribute('visibility', 'visible');
+    for (const el of [cross]) { el.setAttribute('x1', x(i)); el.setAttribute('x2', x(i)); el.setAttribute('visibility', 'visible'); }
+    mark.setAttribute('cx', x(i));
+    mark.setAttribute('cy', y(weeks[i].total));
+    mark.setAttribute('visibility', 'visible');
     tip.hidden = false;
     tip.textContent = 'Week of ' + L.shortDate(weeks[i].week) + ': ' + plural(weeks[i].total, 'tick') + (weeks[i].week === thisWeek ? ' so far' : '');
     const left = (x(i) / W) * box.width;
-    tip.style.left = Math.min(Math.max(left, 70), box.width - 70) + 'px';
+    tip.style.left = Math.min(Math.max(left, 80), box.width - 80) + 'px';
   };
   svg.addEventListener('pointermove', show);
   svg.addEventListener('pointerdown', show);
-  svg.addEventListener('pointerleave', () => { tip.hidden = true; cross.setAttribute('visibility', 'hidden'); });
+  svg.addEventListener('pointerleave', () => {
+    tip.hidden = true;
+    cross.setAttribute('visibility', 'hidden');
+    mark.setAttribute('visibility', 'hidden');
+  });
   return wrap;
 }
 
@@ -595,74 +724,109 @@ function moveRoutine(index, dir) {
 function SettingsView() {
   const n = state.outbox.length;
   const maxOrder = Math.max(0, ...view.allRoutines.map((r) => Number(r.order) || 0));
+  const icons = L.showIcons(view);
+  const missing = view.routines.filter((r) => !r.icon);
   const newIcon = h('input', { type: 'text', class: 'icon', placeholder: '🙂', 'aria-label': 'Icon' });
   const newName = h('input', { type: 'text', required: true, placeholder: 'New habit', 'aria-label': 'Name' });
+  const syncLevel = state.lastError ? 'error' : n ? 'pending' : 'ok';
 
-  return h('div', null,
-    h('h1', null, 'Settings'),
-
-    h('section', null,
-      h('h2', null, 'Sync'),
-      h('p', null,
-        n ? plural(n, 'change') + ' not yet in the Sheet. ' : 'Every change is in the Sheet. ',
-        state.lastSync ? 'Last synced ' + new Date(state.lastSync).toLocaleString() + '.' : ''),
-      state.lastError && h('p', { class: 'msg' }, 'Last attempt failed: ' + state.lastError),
-      h('button', { onclick: () => sync(), disabled: state.syncing }, state.syncing ? 'Syncing…' : 'Sync now')),
+  return [
+    TopBar('Settings'),
 
     h('section', null,
-      h('h2', null, 'Habits'),
-      h('p', { class: 'muted small' }, 'Changes save when you leave a field. You can also edit the Routines tab in the Sheet.'),
-      h('ul', { class: 'plain edit-list' }, view.routines.map((r, i) => h('li', null,
-        h('input', { type: 'text', class: 'icon', value: r.icon || '', 'aria-label': 'Icon for ' + r.name, onchange: (e) => routineOp(r, { icon: e.target.value.trim() }) }),
-        h('input', { type: 'text', value: r.name, 'aria-label': 'Name', onchange: (e) => e.target.value.trim() && routineOp(r, { name: e.target.value.trim() }) }),
-        h('button', { onclick: () => moveRoutine(i, -1), disabled: i === 0, 'aria-label': 'Move ' + r.name + ' up' }, '↑'),
-        h('button', { onclick: () => moveRoutine(i, 1), disabled: i === view.routines.length - 1, 'aria-label': 'Move ' + r.name + ' down' }, '↓'),
-        h('button', { onclick: () => routineOp(r, { archived: today() }), 'aria-label': 'Archive ' + r.name }, 'Archive')))),
+      h('h2', { class: 'section-label' }, 'Style'),
+      h('div', { class: 'styles' }, STYLES.map((s) => h('button', {
+        class: 'style-card' + (state.settings.style === s.id ? ' on' : ''),
+        'data-style': s.id, 'aria-pressed': String(state.settings.style === s.id), onclick: () => setStyle(s.id),
+      },
+      h('span', { class: 'style-sample' }, 'Aa'),
+      h('span', { class: 'style-name' }, s.name),
+      h('span', { class: 'style-note' }, s.font),
+      h('span', { class: 'style-swatch' })))),
+      h('p', { class: 'muted small' }, 'Font and accent colour. Set per device.')),
+
+    h('section', null,
+      h('h2', { class: 'section-label' }, 'Habits'),
+      h('ul', { class: 'rows' }, view.routines.map((r, i) => {
+        const open = state.openHabit === r.id;
+        return h('li', { class: 'habit-edit' + (open ? ' open' : '') },
+          h('div', { class: 'plain-row' },
+            h('span', { class: 'habit-name' }, label(r, icons)),
+            h('button', { class: 'linklike accent', 'aria-expanded': String(open), onclick: () => { state.openHabit = open ? '' : r.id; render(true); } }, open ? 'Close' : 'Edit')),
+          open && h('div', { class: 'editor' },
+            h('div', { class: 'inline' },
+              h('input', { type: 'text', class: 'icon', value: r.icon || '', 'aria-label': 'Icon for ' + r.name, onchange: (e) => routineOp(r, { icon: e.target.value.trim() }) }),
+              h('input', { type: 'text', class: 'grow', value: r.name, 'aria-label': 'Name', onchange: (e) => e.target.value.trim() && routineOp(r, { name: e.target.value.trim() }) })),
+            h('div', { class: 'buttons' },
+              h('button', { class: 'btn ghost', onclick: () => moveRoutine(i, -1), disabled: i === 0, 'aria-label': 'Move ' + r.name + ' up' }, '↑ Up'),
+              h('button', { class: 'btn ghost', onclick: () => moveRoutine(i, 1), disabled: i === view.routines.length - 1, 'aria-label': 'Move ' + r.name + ' down' }, '↓ Down'),
+              h('button', { class: 'linklike danger', onclick: () => { state.openHabit = ''; routineOp(r, { archived: today() }); }, 'aria-label': 'Archive ' + r.name }, 'Archive'))));
+      })),
       h('form', {
-        class: 'inline',
+        class: 'inline add-habit',
         onsubmit: (e) => {
           e.preventDefault();
           if (!newName.value.trim()) return;
           routineOp({ id: L.newId() }, { name: newName.value.trim(), icon: newIcon.value.trim(), order: String(maxOrder + 1) });
         },
-      }, newIcon, newName, h('button', null, 'Add habit')),
-      view.archivedRoutines.length > 0 && h('details', null,
-        h('summary', null, 'Archived habits (' + view.archivedRoutines.length + ')'),
-        h('ul', { class: 'plain' }, view.archivedRoutines.map((r) => h('li', null, (r.icon ? r.icon + ' ' : '') + r.name + ' ',
-          h('button', { onclick: () => routineOp(r, { archived: '', order: String(maxOrder + 1) }) }, 'Restore')))))),
+      }, newIcon, newName, h('button', { class: 'btn outline' }, '+ Add habit')),
+      missing.length > 0 && view.routines.length > missing.length && h('p', { class: 'note' },
+        'Icons are hidden because ' + plural(missing.length, 'habit') + ' ' + (missing.length === 1 ? 'has' : 'have') + ' none: ',
+        missing.map((r) => r.name).join(', '), '. Give each an emoji (Edit, or the icon column in the Routines tab) and all icons show.'),
+      view.archivedRoutines.length > 0 && h('details', { class: 'archived' },
+        h('summary', null, plural(view.archivedRoutines.length, 'archived habit')),
+        h('ul', { class: 'rows' }, view.archivedRoutines.map((r) => h('li', { class: 'plain-row' },
+          h('span', null, r.name),
+          h('button', { class: 'btn ghost', onclick: () => routineOp(r, { archived: '', order: String(maxOrder + 1) }) }, 'Restore')))))),
 
     h('section', null,
-      h('h2', null, 'Day starts at'),
-      h('p', { class: 'muted small' }, 'Ticks made before this hour count for the previous day. Set per device.'),
-      h('select', {
-        onchange: (e) => {
-          state.settings.dayStart = Number(e.target.value);
-          S.save('settings', state.settings);
-          render(true);
-        },
-      }, [0, 1, 2, 3, 4, 5, 6].map((hr) => h('option', { value: hr, selected: hr === state.settings.dayStart }, String(hr).padStart(2, '0') + ':00')))),
+      h('h2', { class: 'section-label' }, 'Sync'),
+      h('div', { class: 'status-line' },
+        h('span', { class: 'dot', 'data-level': syncLevel }),
+        h('div', null,
+          h('div', null, isDemo() ? 'Demo mode, sample data on this device' : state.lastError ? 'Not synced' : 'Connected to your Ruthines Sheet'),
+          h('div', { class: 'muted small' },
+            state.lastSync ? 'Last synced ' + new Date(state.lastSync).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Not synced yet',
+            ', ', n ? plural(n, 'change') + ' waiting' : 'nothing waiting'),
+          state.lastError && h('div', { class: 'msg small' }, state.lastError)),
+        h('button', { class: 'btn outline', onclick: () => sync(), disabled: state.syncing }, state.syncing ? 'Syncing…' : 'Sync now'))),
 
     h('section', null,
-      h('h2', null, 'Install'),
-      h('ul', null,
+      h('h2', { class: 'section-label' }, 'Day'),
+      h('label', { class: 'plain-row' },
+        h('span', null, 'Day starts at', h('span', { class: 'muted small block' }, 'Ticks before this hour count for the day before')),
+        h('select', {
+          onchange: (e) => {
+            state.settings.dayStart = Number(e.target.value);
+            S.save('settings', state.settings);
+            render(true);
+          },
+        }, [0, 1, 2, 3, 4, 5, 6].map((hr) => h('option', { value: hr, selected: hr === state.settings.dayStart }, String(hr).padStart(2, '0') + ':00'))))),
+
+    h('section', null,
+      h('h2', { class: 'section-label' }, 'Install'),
+      h('ul', { class: 'plain-list muted small' },
         h('li', null, 'iPhone: open in Safari, tap Share, then Add to Home Screen.'),
-        h('li', null, 'Mac or PC in Chrome or Edge: click the install icon at the right of the address bar.'),
+        h('li', null, 'Mac or PC in Chrome or Edge: the install icon at the right of the address bar.'),
         h('li', null, 'Mac in Safari: File, then Add to Dock.'))),
 
     h('section', null,
-      h('h2', null, 'This device'),
-      h('p', { class: 'muted small' }, 'Connected to ' + state.config.url.replace(/\/macros\/s\/(.{6}).*\/exec$/, '/macros/s/$1…/exec')),
-      h('button', {
-        onclick: async () => {
-          const warn = n ? plural(n, 'change') + ' on this device are not in the Sheet yet and will be lost. ' : '';
-          if (!confirm(warn + 'Disconnect this device? The Sheet is not touched.')) return;
-          Object.assign(state, { config: null, data: null, outbox: [], lastSync: '', lastError: '', allData: null });
-          await Promise.all(['config', 'data', 'outbox', 'lastSync'].map((k) => S.save(k, undefined)));
-          render(true);
-        },
-      }, 'Disconnect this device'),
+      h('h2', { class: 'section-label' }, 'This device'),
+      !isDemo() && h('p', { class: 'muted small' }, 'Connected to ' + state.config.url.replace(/\/macros\/s\/(.{6}).*\/exec$/, '/macros/s/$1…/exec')),
+      isDemo()
+        ? h('button', { class: 'linklike danger', onclick: exitDemo }, 'Exit the demo')
+        : h('button', {
+          class: 'linklike danger',
+          onclick: async () => {
+            const warn = n ? plural(n, 'change') + ' on this device are not in the Sheet yet and will be lost. ' : '';
+            if (!confirm(warn + 'Disconnect this device? The Sheet is not touched.')) return;
+            Object.assign(state, { config: null, data: null, outbox: [], lastSync: '', lastError: '', ext: null });
+            await Promise.all(['config', 'data', 'outbox', 'lastSync'].map((k) => S.save(k, undefined)));
+            render(true);
+          },
+        }, 'Disconnect this device'),
       h('p', { class: 'muted small' }, 'Ruthines ' + VERSION)),
-  );
+  ];
 }
 
 /* ---------- start ---------- */
@@ -674,9 +838,14 @@ async function start() {
     config: config || null,
     data: data || null,
     outbox: outbox || [],
-    settings: { dayStart: 4, ...(settings || {}) },
+    settings: { dayStart: 4, style: 'clay', ...(settings || {}) },
     lastSync: lastSync || '',
   });
+  const params = new URLSearchParams(location.search);
+  const styleParam = params.get('style');
+  if (STYLES.some((s) => s.id === styleParam)) state.settings.style = styleParam;
+  applyStyle();
+  if ((params.has('demo') || self.RUTHINES_DEMO) && !state.config) await startDemo();
   render(true);
   if (state.config) sync();
 
@@ -698,7 +867,7 @@ async function start() {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!hadController) return;
-      const bar = h('button', { class: 'update', onclick: () => location.reload() }, 'A new version is ready. Tap to reload.');
+      const bar = h('button', { class: 'update btn primary', onclick: () => location.reload() }, 'A new version is ready. Tap to reload.');
       document.body.append(bar);
     });
   }

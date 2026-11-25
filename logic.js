@@ -265,3 +265,15 @@ export function choresCsv(view) {
     });
   return toCsv(rows);
 }
+
+/** ISO week number (weeks start Monday; week 1 holds the year's first Thursday). */
+export function isoWeek(s) {
+  const thursday = addDays(weekStart(s), 3);
+  const jan1 = thursday.slice(0, 4) + '-01-01';
+  return Math.floor(daysBetween(jan1, thursday) / 7) + 1;
+}
+
+/** Icons show only when every active habit has one, so the list never looks half-done. */
+export function showIcons(view) {
+  return view.routines.length > 0 && view.routines.every((r) => r.icon);
+}
