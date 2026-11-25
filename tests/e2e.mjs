@@ -147,8 +147,14 @@ try {
   console.log('ok week grid, checked cells:', weekChecked);
 
   // 8. Edit chores (reached from Edit on the Chores tab): add a chore with a last-done date, rename one.
-  await page.locator('a[href="#chores"]:visible').first().click();
+  // Chores live on Week now; there is no Chores tab.
+  assert.equal(await page.locator('a[href="#chores"]').count(), 0);
+  await page.locator('a[href="#week"]:visible').first().click();
   await page.getByRole('heading', { name: 'Chores' }).waitFor();
+  await page.locator('li.chore', { hasText: 'Clean fridge' }).locator('.chore-main').click();
+  await page.getByText('Repeats every 7 days').waitFor();
+  await page.locator('.habit-toggle', { hasText: 'Read' }).click();
+  await page.getByText(/of the last 30 days/).waitFor();
   assert.equal(await page.getByRole('button', { name: '+ Add chore' }).count(), 0);
   await page.getByRole('link', { name: 'Edit chores' }).click();
   await page.getByRole('heading', { name: 'Edit chores' }).waitFor();
