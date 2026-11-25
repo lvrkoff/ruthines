@@ -2,7 +2,7 @@ import * as L from './logic.js';
 import * as S from './store.js';
 import { DEMO_URL, resetDemo } from './demo.js';
 
-export const VERSION = '1.3.0';
+export const VERSION = '1.4.0';
 
 const state = {
   config: null, // { url, key } — stored only on this device
@@ -147,7 +147,10 @@ function render(force) {
     return;
   }
   const tab = currentTab();
-  const screens = { today: TodayView, week: WeekView, chores: ChoresView, progress: ProgressView, settings: SettingsView };
+  const screens = {
+    today: TodayView, week: WeekView, progress: ProgressView, settings: SettingsView,
+    'habit-list': HabitListView, 'chore-list': ChoreListView,
+  };
   const y = app.dataset.tab === tab ? window.scrollY : 0;
   app.dataset.tab = tab;
   app.replaceChildren(...[
@@ -162,11 +165,15 @@ function render(force) {
 
 document.addEventListener('focusout', () => setTimeout(() => renderPending && render(), 0));
 
-const TABS = [['today', 'Today'], ['week', 'Week'], ['chores', 'Chores'], ['progress', 'Progress'], ['settings', 'Settings']];
+const TABS = [['today', 'Today'], ['week', 'Week'], ['progress', 'Progress'], ['settings', 'Settings']];
+// Pages for adding and changing habits and chores, reached from Edit on the screens that show them.
+const EDIT_PAGES = [['habit-list', 'Habits'], ['chore-list', 'Chores']];
+// Where each edit page's back arrow goes, and which tab it lights up in the bottom bar.
+const PARENT = { 'habit-list': 'today', 'chore-list': 'week' };
 
 function currentTab() {
-  const t = location.hash.slice(1);
-  return TABS.some(([id]) => id === t) ? t : 'today';
+  const t = location.hash.slice(1) === 'chores' ? 'week' : location.hash.slice(1); // old links to the Chores tab
+  return [...TABS, ...EDIT_PAGES].some(([id]) => id === t) ? t : 'today';
 }
 
 /* ---------- chrome: navigation, sync dot ---------- */
@@ -174,27 +181,36 @@ function currentTab() {
 function SideNav(tab) {
   return h('aside', { class: 'sidenav' },
     h('div', { class: 'brand' }, 'Ruthines'),
-    h('nav', null, TABS.map(([id, text]) =>
-      h('a', { href: '#' + id, 'aria-current': id === tab ? 'page' : null }, text))),
+    h('nav', null,
+      TABS.slice(0, 3).map(([id, text]) => h('a', { href: '#' + id, 'aria-current': id === tab ? 'page' : null }, text)),
+      h('span', { class: 'nav-label' }, 'Edit'),
+      EDIT_PAGES.map(([id, text]) => h('a', { href: '#' + id, 'aria-current': id === tab ? 'page' : null }, text)),
+      h('a', { href: '#settings', class: 'nav-settings', 'aria-current': tab === 'settings' ? 'page' : null }, 'Settings')),
     h('button', { class: 'sync-line', onclick: () => sync() }, SyncDot(), h('span', { class: 'sync-text' })));
 }
 
 function TabBar(tab) {
-  return h('nav', { class: 'tabbar' }, TABS.slice(0, 4).map(([id, text]) =>
-    h('a', { href: '#' + id, 'aria-current': id === tab ? 'page' : null }, text)));
+  const lit = PARENT[tab] || tab;
+  return h('nav', { class: 'tabbar' }, TABS.slice(0, 3).map(([id, text]) =>
+    h('a', { href: '#' + id, 'aria-current': id === lit ? 'page' : null }, text)));
 }
 
 function SyncDot() {
   return h('span', { class: 'dot sync-dot', 'aria-hidden': 'true' });
 }
 
-/** Top row of a screen: optional ‹ › around a title, then the sync dot and gear. */
-function TopBar(title, nav) {
+/**
+ * Top row of a screen: optional ‹ › around a title, then an optional Edit link, the sync dot and gear.
+ * opts.back puts a back arrow before the title instead.
+ */
+function TopBar(title, nav, opts = {}) {
   return h('div', { class: 'topbar' },
+    opts.back && h('a', { class: 'icon-btn back', href: '#' + opts.back, 'aria-label': 'Back' }, '‹'),
     nav && h('button', { class: 'icon-btn', onclick: nav.prev, 'aria-label': nav.prevLabel }, '‹'),
     h('h1', null, title),
     nav && h('button', { class: 'icon-btn', onclick: nav.next, disabled: nav.atEnd, 'aria-label': nav.nextLabel }, '›'),
     h('span', { class: 'spacer' }),
+    opts.edit && h('a', { class: 'edit-link', href: '#' + opts.edit[0], 'aria-label': opts.edit[1] }, 'Edit'),
     h('button', { class: 'icon-btn sync-btn', onclick: () => sync(), title: 'Sync now' }, SyncDot()),
     h('a', { class: 'icon-btn gear', href: '#settings', 'aria-label': 'Settings' }, '⚙'));
 }
@@ -305,7 +321,7 @@ function TodayView() {
   return [
     TopBar(d === t ? 'Today' : L.prettyDate(d), {
       prev: () => go(-1), next: () => go(1), atEnd: d >= t, prevLabel: 'Previous day', nextLabel: 'Next day',
-    }),
+    }, { edit: ['habit-list', 'Edit habits'] }),
     h('p', { class: 'subtitle' }, d === t ? L.prettyDate(d) : h('button', { class: 'linklike accent', onclick: () => { state.viewDate = null; render(true); } }, 'Back to today')),
     d < view.since && h('p', { class: 'note' }, 'This day is older than the 90 days kept on this device, so earlier ticks may not show.'),
     total > 0 && h('div', { class: 'progress' },
@@ -322,13 +338,13 @@ function TodayView() {
               h('input', { type: 'checkbox', class: 'tick', checked: done, onchange: () => toggleHabit(d, r.id) }),
               h('span', { class: 'habit-name' }, label(r, icons))));
           }))
-          : h('p', { class: 'empty' }, 'No habits yet. Add them in ', h('a', { href: '#settings' }, 'Settings'), ' or the Routines tab of the Sheet.'),
+          : h('p', { class: 'empty' }, 'No habits yet. Add them in ', h('a', { href: '#habit-list' }, 'Edit habits'), ' or the Routines tab of the Sheet.'),
       ),
       h('section', null,
         h('h2', { class: 'section-label' }, 'Chores due'),
         chores.length
           ? h('ul', { class: 'rows' }, chores.map(({ chore, s }) => TodayChore(chore, s, d)))
-          : h('p', { class: 'empty' }, 'Nothing due in the next 2 days. ', h('a', { href: '#chores' }, 'All chores')),
+          : h('p', { class: 'empty' }, 'Nothing due in the next 2 days. ', h('a', { href: '#week' }, 'All chores')),
       ),
     ),
   ];
@@ -368,63 +384,152 @@ function WeekView() {
   return [
     TopBar('W' + L.isoWeek(ws), {
       prev: () => move(-1), next: () => move(1), atEnd: isThisWeek, prevLabel: 'Previous week', nextLabel: 'Next week',
-    }),
+    }, { edit: ['habit-list', 'Edit habits'] }),
     h('p', { class: 'subtitle' }, range, !isThisWeek && ' · ',
       !isThisWeek && h('button', { class: 'linklike accent', onclick: () => { state.weekDate = null; render(true); } }, 'This week')),
     we < view.since && h('p', { class: 'note' }, 'This week is older than the 90 days kept on this device, so earlier ticks may not show.'),
-    h('div', { class: 'grid-wrap' },
-      h('table', { class: 'grid' },
-        h('thead', null, h('tr', null,
-          h('th', { class: 'name' }, h('span', { class: 'sr-only' }, 'Habit')),
-          days.map((d) => h('th', { class: d === t ? 'today' : null, title: L.prettyDate(d) },
-            L.weekdayName(d).slice(0, 1), h('span', { class: 'daynum' }, L.parseDate(d).getDate()))),
-          h('th', { class: 'count' }, '/7'))),
-        h('tbody', null, view.routines.map((r) => {
-          const n = days.filter((d) => L.isDone(view, d, r.id)).length;
-          return h('tr', null,
-            h('th', { class: 'name', scope: 'row' }, label(r, icons)),
-            days.map((d) => h('td', { class: d === t ? 'today' : null },
-              h('input', {
-                type: 'checkbox', class: 'tick small' + (d > t ? ' future' : ''), checked: L.isDone(view, d, r.id), disabled: d > t,
-                'aria-label': r.name + ', ' + L.prettyDate(d), onchange: () => toggleHabit(d, r.id),
-              }))),
-            h('td', { class: 'count' }, n));
-        })),
-      ),
-    ),
+    HabitGrid(days, t, icons, ws),
     h('p', { class: 'muted small foot' },
       (isThisWeek ? 'Week so far: ' : 'Week total: ') + ticks + ' of ' + past.length * view.routines.length + ' possible'),
+    WeekChores(t),
   ];
+}
+
+/**
+ * Habits down, days across. On a phone about four days show and the rest scroll sideways;
+ * it opens on today, and keeps its place while you tick.
+ */
+function HabitGrid(days, t, icons, ws) {
+  const wrap = h('div', { class: 'grid-wrap', onscroll: () => { state.gridScroll = { ws, left: wrap.scrollLeft }; } },
+    h('table', { class: 'grid' },
+      h('thead', null, h('tr', null,
+        h('th', { class: 'name' }, h('span', { class: 'sr-only' }, 'Habit')),
+        days.map((d) => h('th', { class: 'day' + (d === t ? ' today' : ''), title: L.prettyDate(d) },
+          L.weekdayName(d).slice(0, 3), h('span', { class: 'daynum' }, L.parseDate(d).getDate()))),
+        h('th', { class: 'count', title: 'Days done this week' }, '/7'))),
+      h('tbody', null, view.routines.map((r) => {
+        const n = days.filter((d) => L.isDone(view, d, r.id)).length;
+        const open = state.openHabit === r.id;
+        const row = h('tr', { class: open ? 'open' : null },
+          h('th', { class: 'name', scope: 'row' },
+            h('button', { class: 'as-button habit-toggle', 'aria-expanded': String(open), onclick: () => { state.openHabit = open ? '' : r.id; render(true); } },
+              label(r, icons))),
+          days.map((d) => h('td', { class: 'day' + (d === t ? ' today' : '') },
+            h('input', {
+              type: 'checkbox', class: 'tick' + (d > t ? ' future' : ''), checked: L.isDone(view, d, r.id), disabled: d > t,
+              'aria-label': r.name + ', ' + L.prettyDate(d), onchange: () => toggleHabit(d, r.id),
+            }))),
+          h('td', { class: 'count' }, n));
+        return open ? [row, h('tr', { class: 'habit-details' }, h('td', { colspan: days.length + 2 }, HabitDetails(r, t)))] : row;
+      }))));
+  queueMicrotask(() => {
+    if (wrap.scrollWidth <= wrap.clientWidth) return;
+    if (state.gridScroll && state.gridScroll.ws === ws) { wrap.scrollLeft = state.gridScroll.left; return; }
+    // First look at this week: bring today (or the week's last day) into view at the right.
+    const cells = wrap.querySelectorAll('thead th.day');
+    const target = [...cells].find((c) => c.classList.contains('today')) || cells[cells.length - 1];
+    const count = wrap.querySelector('thead th.count');
+    wrap.scrollLeft = target.offsetLeft + target.offsetWidth - (wrap.clientWidth - count.offsetWidth);
+  });
+  return wrap;
+}
+
+/** Opens under a habit in the Week grid: streak, last done, and how often lately. */
+function HabitDetails(r, t) {
+  const streak = L.streak(view, r.id, t);
+  let last = '';
+  for (let d = t; d >= view.since && !last; d = L.addDays(d, -1)) if (L.isDone(view, d, r.id)) last = d;
+  const from = L.addDays(t, -29);
+  const done30 = L.dateRange(from, t).filter((d) => L.isDone(view, d, r.id)).length;
+  return h('div', { class: 'details' },
+    h('p', { class: 'details-name' }, r.name),
+    h('p', null, streak ? 'Streak: ' + plural(streak, 'day') : 'No streak right now'),
+    h('p', null, last ? 'Last done ' + (last === t ? 'today' : L.prettyDate(last)) : 'Not done in the last 90 days'),
+    h('p', { class: 'muted' }, 'Done on ' + done30 + ' of the last 30 days'));
+}
+
+/** Bottom half of Week: every chore as a list, like on Today. Tap one to log it on an earlier day. */
+function WeekChores(t) {
+  const { zones, zone } = activeZones();
+  const list = L.choresWithStatus(view, t).filter(({ chore }) => !zone || chore.zone === zone);
+  return h('section', { class: 'week-chores' },
+    h('div', { class: 'section-head' },
+      h('h2', { class: 'section-label' }, 'Chores'),
+      h('a', { class: 'edit-link small', href: '#chore-list', 'aria-label': 'Edit chores' }, 'Edit')),
+    zoneChips(zones, zone),
+    list.length
+      ? h('ul', { class: 'rows' }, list.map(({ chore, s }) => ChoreRow(chore, s, t)))
+      : h('p', { class: 'empty' }, view.chores.length ? 'No chores in this zone.'
+        : ['No chores yet. Add them in ', h('a', { href: '#chore-list' }, 'Edit chores'), ' or the Chores tab of the Sheet.']));
 }
 
 /* ---------- Chores ---------- */
 
-/** "3 d late", "today", "in 2 d", "set up" — the short due text on the right. */
-function dueShort(s) {
-  if (!s.last) return 'not done yet';
-  if (!s.every) return 'no interval';
-  if (s.daysLeft < 0) return -s.daysLeft + ' d late';
-  if (s.daysLeft === 0) return 'today';
-  return 'in ' + s.daysLeft + ' d';
+function zoneChips(zones, zone) {
+  const setZone = (z) => { state.zone = z; render(true); };
+  return zones.length > 0 && h('div', { class: 'chips', role: 'group', 'aria-label': 'Zone' },
+    h('button', { class: 'chip' + (zone ? '' : ' on'), 'aria-pressed': String(!zone), onclick: () => setZone('') }, 'All'),
+    zones.map((z) => h('button', { class: 'chip' + (zone === z ? ' on' : ''), 'aria-pressed': String(zone === z), onclick: () => setZone(z) }, z)));
 }
 
-function ChoresView() {
-  const t = today();
+function activeZones() {
   const zones = [...new Set(view.chores.map((c) => c.zone).filter(Boolean))].sort();
-  const zone = zones.includes(state.zone) ? state.zone : '';
-  const list = L.choresWithStatus(view, t).filter(({ chore }) => !zone || chore.zone === zone);
+  return { zones, zone: zones.includes(state.zone) ? state.zone : '' };
+}
+
+/** A chore in the Week list: the same row as on Today; tap the name for its details. */
+function ChoreRow(chore, s, t) {
+  const doneToday = view.choreLog.has(chore.id + '|' + t);
+  const open = state.openChore === chore.id;
+  const sub = [doneToday ? 'done today' : s.last ? s.label : 'never done yet', chore.zone && !state.zone ? chore.zone : ''].filter(Boolean).join(' · ');
+  const toggle = () => { state.openChore = open ? '' : chore.id; render(true); };
+
+  return h('li', { class: 'chore' + (open ? ' open' : '') + (doneToday ? ' done' : '') },
+    h('span', { class: 'dot status-' + (doneToday ? 'done' : s.last ? s.level : 'never') }),
+    h('button', { class: 'chore-main as-button', onclick: toggle, 'aria-expanded': String(open) },
+      h('span', { class: 'chore-name' }, chore.name),
+      h('span', { class: 'chore-sub' }, sub)),
+    doneToday
+      ? h('button', { class: 'btn ghost', onclick: () => choreUndo(chore.id, t) }, 'Undo')
+      : h('button', { class: 'btn outline', onclick: () => choreDone(chore.id, t) }, 'Done'),
+    open && ChoreHistory(chore, s));
+}
+
+/** Opens under a chore on Week: how often it repeats and when it was done. */
+function ChoreHistory(chore, s) {
+  const history = [...view.choreLog.values()].filter((r) => r.chore_id === chore.id)
+    .map((r) => r.date).sort().reverse().slice(0, 6);
+  return h('div', { class: 'details' },
+    h('p', null, s.every ? 'Repeats every ' + plural(Number(s.every), 'day') : 'No interval set'),
+    h('p', null, history.length ? 'Last done ' + L.prettyDate(history[0]) : 'Not done yet'),
+    history.length > 1 && h('p', { class: 'muted' }, 'Before that: ' + history.slice(1).map(L.shortDate).join(', ')));
+}
+
+/* ---------- Edit chores ---------- */
+
+/** Every chore with Edit, plus Add and the archived ones: the same shape as Edit habits. */
+function ChoreListView() {
+  const { zones, zone } = activeZones();
   const allZones = [...new Set(view.allChores.map((c) => c.zone).filter(Boolean))].sort();
-  const setZone = (z) => { state.zone = z; render(true); };
+  const list = view.chores.filter((c) => !zone || c.zone === zone)
+    .slice().sort((a, b) => (a.zone || '~').localeCompare(b.zone || '~') || a.name.localeCompare(b.name));
 
   return [
-    TopBar('Chores'),
-    zones.length > 0 && h('div', { class: 'chips', role: 'group', 'aria-label': 'Zone' },
-      h('button', { class: 'chip' + (zone ? '' : ' on'), 'aria-pressed': String(!zone), onclick: () => setZone('') }, 'All'),
-      zones.map((z) => h('button', { class: 'chip' + (zone === z ? ' on' : ''), 'aria-pressed': String(zone === z), onclick: () => setZone(z) }, z))),
-    list.length
-      ? h('ul', { class: 'rows' }, list.map(({ chore, s }) => ChoreRow(chore, s, t, allZones)))
-      : h('p', { class: 'empty' }, view.chores.length ? 'No chores in this zone.' : 'No chores yet. Add one below, or type them into the Chores tab of the Sheet.'),
-    AddChore(allZones),
+    TopBar('Edit chores', null, { back: 'week' }),
+    zoneChips(zones, zone),
+    h('section', null,
+      list.length
+        ? h('ul', { class: 'rows' }, list.map((c) => {
+          const open = state.openChore === c.id;
+          const sub = [c.every_days ? 'every ' + c.every_days + ' d' : 'no interval', !zone && c.zone].filter(Boolean).join(' · ');
+          return h('li', { class: 'item-edit chore-edit' + (open ? ' open' : '') },
+            h('div', { class: 'plain-row' },
+              h('span', { class: 'item-name' }, c.name, h('span', { class: 'muted small block' }, sub)),
+              h('button', { class: 'linklike accent', 'aria-expanded': String(open), onclick: () => { state.openChore = open ? '' : c.id; render(true); } }, open ? 'Close' : 'Edit')),
+            open && ChoreEditor(c));
+        }))
+        : h('p', { class: 'empty' }, view.chores.length ? 'No chores in this zone.' : 'No chores yet. Add the first one below.'),
+      AddChore(allZones)),
     view.archivedChores.length > 0 && h('details', { class: 'archived' },
       h('summary', null, plural(view.archivedChores.length, 'archived chore')),
       h('ul', { class: 'rows' }, view.archivedChores.map((c) => h('li', { class: 'plain-row' },
@@ -434,37 +539,10 @@ function ChoresView() {
   ];
 }
 
-function ChoreRow(chore, s, t) {
-  const doneToday = view.choreLog.has(chore.id + '|' + t);
-  const open = state.openChore === chore.id;
-  const sub = [
-    s.every ? 'every ' + s.every + ' d' : '',
-    s.last ? 'done ' + L.shortDate(s.last) : 'never done yet',
-    chore.zone && !state.zone ? chore.zone : '',
-  ].filter(Boolean).join(' · ');
-  const toggle = () => { state.openChore = open ? '' : chore.id; render(true); };
-
-  return h('li', { class: 'chore' + (open ? ' open' : '') + (doneToday ? ' done' : '') },
-    h('span', { class: 'dot status-' + (doneToday ? 'done' : s.last ? s.level : 'never') }),
-    h('button', { class: 'chore-main as-button', onclick: toggle, 'aria-expanded': String(open) },
-      h('span', { class: 'chore-name' }, chore.name),
-      h('span', { class: 'chore-sub' }, sub)),
-    h('div', { class: 'chore-side' },
-      h('span', { class: 'due status-text-' + (doneToday ? 'done' : s.last ? s.level : 'never') }, doneToday ? 'done today' : dueShort(s)),
-      doneToday
-        ? h('button', { class: 'btn ghost small', onclick: () => choreUndo(chore.id, t) }, 'Undo')
-        : h('button', { class: 'btn outline small', onclick: () => choreDone(chore.id, t) }, 'Done')),
-    open && ChoreEditor(chore, t));
-}
-
-function ChoreEditor(chore, t) {
+function ChoreEditor(chore) {
   const name = h('input', { type: 'text', value: chore.name, required: true });
   const zone = h('input', { type: 'text', value: chore.zone || '', list: 'zones' });
   const every = h('input', { type: 'number', min: 1, step: 1, value: chore.every_days || '', class: 'short' });
-  const when = h('input', { type: 'date', max: t, value: L.addDays(t, -1) });
-  const history = [...view.choreLog.values()].filter((r) => r.chore_id === chore.id)
-    .map((r) => r.date).sort().reverse().slice(0, 6);
-
   return h('div', { class: 'editor' },
     h('form', {
       class: 'fields',
@@ -479,15 +557,7 @@ function ChoreEditor(chore, t) {
     h('label', null, h('span', { class: 'label' }, 'Zone'), zone),
     h('label', null, h('span', { class: 'label' }, 'Every (days)'), every),
     h('button', { class: 'btn primary' }, 'Save')),
-    h('form', {
-      class: 'inline',
-      onsubmit: (e) => {
-        e.preventDefault();
-        if (when.value) choreDone(chore.id, when.value);
-      },
-    }, h('span', { class: 'label' }, 'Done on another day'), when, h('button', { class: 'btn outline' }, 'Log')),
-    history.length > 0 && h('p', { class: 'muted small' }, 'Recent: ', history.map(L.shortDate).join(', ')),
-    h('button', { class: 'linklike danger', onclick: () => { state.openChore = ''; choreOp(chore, { archived: t }); } }, 'Archive this chore'));
+    h('button', { class: 'linklike danger', onclick: () => { state.openChore = ''; choreOp(chore, { archived: today() }); }, 'aria-label': 'Archive ' + chore.name }, 'Archive'));
 }
 
 function AddChore(zones) {
@@ -684,7 +754,7 @@ function WeeklyChart(weeks, t) {
   return wrap;
 }
 
-/* ---------- Settings ---------- */
+/* ---------- Edit habits ---------- */
 
 function moveRoutine(index, dir) {
   const list = view.routines.slice();
@@ -696,20 +766,17 @@ function moveRoutine(index, dir) {
   });
 }
 
-function SettingsView() {
-  const n = state.outbox.length;
+function HabitListView() {
   const maxOrder = Math.max(0, ...view.allRoutines.map((r) => Number(r.order) || 0));
   const icons = L.showIcons(view);
   const missing = view.routines.filter((r) => !r.icon);
   const newIcon = h('input', { type: 'text', class: 'icon', placeholder: '🙂', 'aria-label': 'Icon' });
   const newName = h('input', { type: 'text', required: true, placeholder: 'New habit', 'aria-label': 'Name' });
-  const syncLevel = state.lastError ? 'error' : n ? 'pending' : 'ok';
 
   return [
-    TopBar('Settings'),
+    TopBar('Edit habits', null, { back: 'today' }),
 
     h('section', null,
-      h('h2', { class: 'section-label' }, 'Habits'),
       h('ul', { class: 'rows' }, view.routines.map((r, i) => {
         const open = state.openHabit === r.id;
         return h('li', { class: 'habit-edit' + (open ? ' open' : '') },
@@ -741,6 +808,17 @@ function SettingsView() {
         h('ul', { class: 'rows' }, view.archivedRoutines.map((r) => h('li', { class: 'plain-row' },
           h('span', null, r.name),
           h('button', { class: 'btn ghost', onclick: () => routineOp(r, { archived: '', order: String(maxOrder + 1) }) }, 'Restore')))))),
+  ];
+}
+
+/* ---------- Settings ---------- */
+
+function SettingsView() {
+  const n = state.outbox.length;
+  const syncLevel = state.lastError ? 'error' : n ? 'pending' : 'ok';
+
+  return [
+    TopBar('Settings'),
 
     h('section', null,
       h('h2', { class: 'section-label' }, 'Sync'),
@@ -809,7 +887,10 @@ async function start() {
   render(true);
   if (state.config) sync();
 
-  addEventListener('hashchange', () => render(true));
+  addEventListener('hashchange', () => {
+    Object.assign(state, { openChore: '', openHabit: '', addingChore: false });
+    render(true);
+  });
   addEventListener('online', () => sync());
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
