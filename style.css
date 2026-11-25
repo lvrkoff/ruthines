@@ -264,6 +264,21 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; pad
 .chore .editor { grid-column: 1 / -1; }
 .as-button { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; color: inherit; }
 
+/* Ruth cards on Today. 8px grid: 16 padding and gap, 128 image, 24 clearance under the close button; radius 14 like .card */
+.ruth-done {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 128px; align-items: center; gap: 16px;
+  margin: 16px 0 8px; padding: 16px; border-radius: 14px; background: var(--accent-tint);
+  animation: ruth-in 0.35s ease-out;
+}
+.ruth-done picture { display: block; padding-top: 24px; }
+.ruth-done img { display: block; width: 128px; height: 128px; }
+.ruth-done p { margin: 0; }
+.ruth-done .small { font-size: 0.875rem; }
+.ruth-title { font-weight: 750; font-size: 1rem; margin-bottom: 4px !important; }
+.ruth-done .ruth-close { position: absolute; top: 4px; right: 4px; width: 44px; height: 44px; font-size: 1.25rem; }
+@keyframes ruth-in { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .ruth-done { animation: none; } }
+
 /* ---------- Week ---------- */
 .grid-wrap { overflow-x: auto; margin: 0 -16px; padding: 0 16px; }
 table.grid { border-collapse: collapse; width: 100%; }

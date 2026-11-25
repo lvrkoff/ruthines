@@ -2,7 +2,7 @@ import * as L from './logic.js';
 import * as S from './store.js';
 import { DEMO_URL, resetDemo } from './demo.js';
 
-export const VERSION = '1.4.1';
+export const VERSION = '1.6.0';
 
 const state = {
   config: null, // { url, key } — stored only on this device
@@ -70,6 +70,11 @@ function choreOp(c, changes) {
 }
 
 function toggleHabit(date, routineId) {
+  // Unticking today's habit brings Ruth back the next time everything is done.
+  if (L.isDone(view, date, routineId) && state.settings.ruthHiddenOn === date) {
+    delete state.settings.ruthHiddenOn;
+    S.save('settings', state.settings);
+  }
   addOp({
     type: 'checkin', date, routineId,
     done: !L.isDone(view, date, routineId),
@@ -328,6 +333,7 @@ function TodayView() {
       h('div', { class: 'progress-text' }, doneCount + ' of ' + total + ' done'),
       h('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': total, 'aria-valuenow': doneCount },
         h('span', { style: 'width:' + (100 * doneCount / total) + '%' }))),
+    ruthMoment(d, t, total, doneCount),
     h('div', { class: 'columns' },
       h('section', null,
         h('h2', { class: 'section-label' }, 'Habits'),
@@ -348,6 +354,49 @@ function TodayView() {
       ),
     ),
   ];
+}
+
+/* ---------- Ruth ---------- */
+
+const STREAK_MILESTONES = [7, 30, 100];
+
+/** At most one Ruth card on Today: a streak milestone first, else All done. */
+function ruthMoment(d, t, total, doneCount) {
+  if (d !== t) return null;
+  const seen = state.settings.ruthSeen || [];
+  const hit = view.routines
+    .filter((r) => L.isDone(view, t, r.id))
+    .map((r) => ({ r, n: L.streak(view, r.id, t) }))
+    .filter(({ r, n }) => STREAK_MILESTONES.includes(n) && !seen.includes(r.id + '|' + t))
+    .sort((a, b) => b.n - a.n)[0];
+  if (hit) {
+    return RuthCard('ruth/streak.webp', 'ruth/streak-still.webp', 'Ruth, cheering',
+      hit.r.name + ': ' + hit.n + ' days in a row', 'Ruth\u2019s keeping count.', () => {
+        state.settings.ruthSeen = [...seen.slice(-50), hit.r.id + '|' + t];
+        S.save('settings', state.settings);
+        render(true);
+      });
+  }
+  if (total > 0 && doneCount === total && state.settings.ruthHiddenOn !== t) {
+    return RuthCard('ruth/done.webp', 'ruth/done-still.webp', 'Ruth, looking pleased',
+      'All done for today', 'Every habit is ticked. Ruth approves.', () => {
+        state.settings.ruthHiddenOn = t;
+        S.save('settings', state.settings);
+        render(true);
+      });
+  }
+  return null;
+}
+
+function RuthCard(src, still, alt, title, text, onClose) {
+  return h('div', { class: 'ruth-done', role: 'status' },
+    h('div', null,
+      h('p', { class: 'ruth-title' }, title),
+      h('p', { class: 'muted small' }, text)),
+    h('picture', null,
+      h('source', { srcset: still, media: '(prefers-reduced-motion: reduce)' }),
+      h('img', { src, width: 128, height: 128, alt })),
+    h('button', { class: 'icon-btn ruth-close', 'aria-label': 'Close', onclick: onClose }, '\u00d7'));
 }
 
 function TodayChore(chore, s, d) {
