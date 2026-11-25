@@ -1,10 +1,7 @@
-/* Ruthines styles. Three looks (Clay, Ink, Grove) switch font and accent;
-   everything else is shared. Fonts are bundled in /fonts (SIL Open Font License). */
+/* Ruthines styles: Manrope with a teal accent, light and dark.
+   The font is bundled in /fonts (SIL Open Font License). */
 
 @font-face { font-family: "Manrope"; src: url("fonts/manrope-latin-wght-normal.woff2") format("woff2"); font-weight: 200 800; font-display: swap; }
-@font-face { font-family: "Space Grotesk"; src: url("fonts/space-grotesk-latin-wght-normal.woff2") format("woff2"); font-weight: 300 700; font-display: swap; }
-@font-face { font-family: "Fraunces"; src: url("fonts/fraunces-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
-@font-face { font-family: "Figtree"; src: url("fonts/figtree-latin-wght-normal.woff2") format("woff2"); font-weight: 300 900; font-display: swap; }
 
 :root {
   color-scheme: light dark;
@@ -20,6 +17,11 @@
   --grey: #a8a29e;
   --good: #2e7d4f;
   --on-accent: #ffffff;
+  --accent: #0f766e;
+  --font: "Manrope", var(--sys);
+  --font-head: "Manrope", var(--sys);
+  --head-weight: 750;
+  --head-spacing: -0.02em;
   --radius: 10px;
   --sys: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -38,6 +40,7 @@
     --grey: #77716b;
     --good: #6fcf97;
     --on-accent: #141312;
+    --accent: #5ed1c1;
     color-scheme: dark;
   }
 }
@@ -56,24 +59,12 @@
   --grey: #77716b;
   --good: #6fcf97;
   --on-accent: #141312;
+  --accent: #5ed1c1;
 }
 
 :root[data-theme="light"] { color-scheme: light; }
 
-/* The three looks. Also used by the preview cards in Settings. */
-[data-style="clay"] { --accent: #b5482a; --font: "Manrope", var(--sys); --font-head: "Manrope", var(--sys); --head-weight: 750; --head-spacing: -0.02em; }
-[data-style="ink"] { --accent: #4338ca; --font: "Space Grotesk", var(--sys); --font-head: "Space Grotesk", var(--sys); --head-weight: 650; --head-spacing: -0.03em; }
-[data-style="grove"] { --accent: #0f766e; --font: "Figtree", var(--sys); --font-head: "Fraunces", Georgia, serif; --head-weight: 600; --head-spacing: -0.01em; }
-@media (prefers-color-scheme: dark) {
-:root:not([data-theme="light"])[data-style="clay"], :root:not([data-theme="light"]) [data-style="clay"] { --accent: #f0916f; }
-:root:not([data-theme="light"])[data-style="ink"], :root:not([data-theme="light"]) [data-style="ink"] { --accent: #a5b4fc; }
-:root:not([data-theme="light"])[data-style="grove"], :root:not([data-theme="light"]) [data-style="grove"] { --accent: #5ed1c1; }
-}
-:root[data-theme="dark"][data-style="clay"], :root[data-theme="dark"] [data-style="clay"] { --accent: #f0916f; }
-:root[data-theme="dark"][data-style="ink"], :root[data-theme="dark"] [data-style="ink"] { --accent: #a5b4fc; }
-:root[data-theme="dark"][data-style="grove"], :root[data-theme="dark"] [data-style="grove"] { --accent: #5ed1c1; }
 :root { --accent-tint: color-mix(in srgb, var(--accent) 12%, transparent); }
-[data-style] { --accent-tint: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -144,7 +135,6 @@ h1 { font-size: 1.75rem; line-height: 1.15; margin: 0; }
   padding: calc(6px + env(safe-area-inset-top)) 16px 6px; font-size: 0.85rem;
 }
 .demobar + .shell .screen { padding-top: 8px; }
-.demo-styles { display: flex; align-items: center; gap: 6px; }
 
 /* ---------- top bar ---------- */
 .topbar { display: flex; align-items: center; gap: 6px; min-height: 52px; }
@@ -312,17 +302,6 @@ table.mini td.off { background: var(--surface-2); color: var(--muted); }
 table.mini td.future { color: var(--line); }
 
 /* ---------- Settings ---------- */
-.styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.style-card {
-  display: grid; gap: 2px; justify-items: start; text-align: left; cursor: pointer;
-  padding: 12px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--fg);
-  font-family: var(--font);
-}
-.style-card.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
-.style-sample { font-family: var(--font-head); font-weight: var(--head-weight); font-size: 1.8rem; line-height: 1.1; color: var(--accent); }
-.style-name { font-weight: 700; }
-.style-note { font-size: 0.75rem; color: var(--muted); }
-.style-swatch { width: 100%; height: 6px; border-radius: 3px; background: var(--accent); margin-top: 6px; }
 .habit-edit .editor { margin-top: 0; }
 .add-habit { margin: 12px 0; }
 .add-habit input[type="text"]:not(.icon) { flex: 1; }

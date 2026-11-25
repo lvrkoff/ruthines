@@ -2,20 +2,13 @@ import * as L from './logic.js';
 import * as S from './store.js';
 import { DEMO_URL, resetDemo } from './demo.js';
 
-export const VERSION = '1.1.0';
-
-/** Font and accent styles, chosen per device in Settings. */
-export const STYLES = [
-  { id: 'clay', name: 'Clay', font: 'Manrope', note: 'Rounded sans, terracotta' },
-  { id: 'ink', name: 'Ink', font: 'Space Grotesk', note: 'Geometric sans, indigo' },
-  { id: 'grove', name: 'Grove', font: 'Fraunces + Figtree', note: 'Serif headings, teal' },
-];
+export const VERSION = '1.2.0';
 
 const state = {
   config: null, // { url, key } — stored only on this device
   data: null, // last data returned by the script
   outbox: [], // changes not yet confirmed by the script
-  settings: { dayStart: 4, style: 'clay' },
+  settings: { dayStart: 4 },
   lastSync: '',
   lastError: '',
   syncing: false,
@@ -55,18 +48,6 @@ const today = () => L.logicalDay(new Date(), state.settings.dayStart);
 const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
 const isDemo = () => state.config && state.config.url === DEMO_URL;
 const label = (r, icons) => (icons && r.icon ? r.icon + ' ' : '') + r.name;
-
-function applyStyle() {
-  const s = STYLES.some((x) => x.id === state.settings.style) ? state.settings.style : 'clay';
-  document.documentElement.dataset.style = s;
-}
-
-function setStyle(id) {
-  state.settings.style = id;
-  S.save('settings', state.settings);
-  applyStyle();
-  render(true);
-}
 
 /* ---------- state changes ---------- */
 
@@ -241,12 +222,6 @@ function renderStatus() {
 function DemoBar() {
   return h('div', { class: 'demobar' },
     h('span', null, 'Demo with sample data'),
-    h('span', { class: 'demo-styles' }, 'Style:',
-      STYLES.map((s) => h('button', {
-        class: 'chip small' + (state.settings.style === s.id ? ' on' : ''),
-        'aria-pressed': String(state.settings.style === s.id),
-        onclick: () => setStyle(s.id),
-      }, s.name))),
     h('button', { class: 'linklike', onclick: exitDemo }, 'Exit'));
 }
 
@@ -734,18 +709,6 @@ function SettingsView() {
     TopBar('Settings'),
 
     h('section', null,
-      h('h2', { class: 'section-label' }, 'Style'),
-      h('div', { class: 'styles' }, STYLES.map((s) => h('button', {
-        class: 'style-card' + (state.settings.style === s.id ? ' on' : ''),
-        'data-style': s.id, 'aria-pressed': String(state.settings.style === s.id), onclick: () => setStyle(s.id),
-      },
-      h('span', { class: 'style-sample' }, 'Aa'),
-      h('span', { class: 'style-name' }, s.name),
-      h('span', { class: 'style-note' }, s.font),
-      h('span', { class: 'style-swatch' })))),
-      h('p', { class: 'muted small' }, 'Font and accent colour. Set per device.')),
-
-    h('section', null,
       h('h2', { class: 'section-label' }, 'Habits'),
       h('ul', { class: 'rows' }, view.routines.map((r, i) => {
         const open = state.openHabit === r.id;
@@ -838,13 +801,10 @@ async function start() {
     config: config || null,
     data: data || null,
     outbox: outbox || [],
-    settings: { dayStart: 4, style: 'clay', ...(settings || {}) },
+    settings: { dayStart: 4, ...(settings || {}) },
     lastSync: lastSync || '',
   });
   const params = new URLSearchParams(location.search);
-  const styleParam = params.get('style');
-  if (STYLES.some((s) => s.id === styleParam)) state.settings.style = styleParam;
-  applyStyle();
   if ((params.has('demo') || self.RUTHINES_DEMO) && !state.config) await startDemo();
   render(true);
   if (state.config) sync();

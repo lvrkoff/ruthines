@@ -18,10 +18,8 @@ A single-user habit and household chores tracker. It's an installable web app
 | Progress | Ticks per week, plus rate and streak per habit. CSV export of habits and chores, and a JSON backup. |
 | Settings | Sync status and Sync now. Add, rename, reorder and archive habits. Day-start hour, install tips, and disconnecting this device. |
 
-**Looks.** Settings has three styles, each a font and an accent colour: Clay (Manrope, terracotta), Ink
-(Space Grotesk, indigo) and Grove (Fraunces headings with Figtree, teal). The choice is per device, and light and
-dark mode follow the system. Habit emoji show only when *every* active habit has one; otherwise none show, and
-Settings names the habits still missing one.
+**Look.** Manrope with a teal accent, in light and dark following the system. Habit emoji show only when
+*every* active habit has one; otherwise none show, and Settings names the habits still missing one.
 
 **Demo.** Open the app with `?demo` (or tap *Try it with sample data* on the Connect screen) to use it with sample
 habits and chores. Nothing is sent anywhere. `node tools/build-demo.mjs demo.html` builds the same demo as a single
@@ -54,7 +52,7 @@ app.js                 screens and sync loop
 logic.js               pure logic: dates, merging the outbox, chore status, streaks, CSV
 store.js               IndexedDB storage and calls to the Apps Script
 demo.js                sample data and an in-browser stand-in for the script (demo mode)
-fonts/                 Manrope, Space Grotesk, Fraunces, Figtree (SIL Open Font License 1.1)
+fonts/                 Manrope (SIL Open Font License 1.1)
 tools/build-demo.mjs   builds the one-page demo
 style.css              plain styling, light and dark
 sw.js                  service worker: keeps the app's files for offline use
