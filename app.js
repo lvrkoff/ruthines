@@ -1,7 +1,7 @@
 import * as L from './logic.js';
 import * as S from './store.js';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 
 const state = {
   config: null, // { url, key } — stored only on this device

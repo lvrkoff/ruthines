@@ -31,6 +31,9 @@ await context.route('https://script.google.com/**', async (route) => {
   if (!online) return route.abort('internetdisconnected');
   requests++;
   const req = route.request();
+  // The key must never appear in a URL, and the app only ever POSTs.
+  assert.ok(!req.url().includes(backend.key), 'key leaked into a URL');
+  assert.equal(req.method(), 'POST');
   const url = new URL(req.url());
   const body = req.method() === 'POST'
     ? backend.post(req.postData())

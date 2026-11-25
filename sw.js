@@ -1,7 +1,7 @@
 // Offline support: keeps the app's own files on the device.
 // Bump VERSION whenever any app file changes, so devices pick up the update.
 // Requests to the Apps Script (data) are never cached here.
-const VERSION = 'ruthines-1.0.0';
+const VERSION = 'ruthines-1.0.1';
 const FILES = [
   './',
   './index.html',

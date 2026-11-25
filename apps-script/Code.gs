@@ -6,6 +6,12 @@
  * run setup() once, then Deploy > New deployment > Web app
  * (Execute as: Me, Who has access: Anyone).
  *
+ * Security: the app sends the key only inside the POST body, never in a URL,
+ * so it stays out of browser history and Google's request logs. After
+ * MAX_FAILS wrong keys in a row, every request is refused for LOCK_MINUTES.
+ * Running setup() again clears a lockout. To change the key, delete SECRET
+ * under Project Settings > Script properties and run setup() again.
+ *
  * The Sheet is the master copy. You can edit any tab by hand: add or rename
  * routines, add chores, fix a tick. The app picks changes up on next sync.
  *
@@ -30,6 +36,8 @@ const TABS = {
 
 const WINDOW_DAYS = 90;   // how far back a normal sync reaches
 const ARCHIVE_DAYS = 400; // Checkins older than this move to Checkins_YYYY tabs
+const MAX_FAILS = 10;     // wrong keys in a row before the lockout
+const LOCK_MINUTES = 15;  // how long the lockout lasts
 
 // Example habits, added only when the Routines tab is empty. Edit or delete
 // them in the Routines tab, or replace this list before running setup().
@@ -67,6 +75,8 @@ function setup() {
   }
 
   const props = PropertiesService.getScriptProperties();
+  props.deleteProperty('FAILS');
+  props.deleteProperty('LOCKED_UNTIL');
   if (!props.getProperty('SECRET')) {
     props.setProperty('SECRET', Utilities.getUuid().replace(/-/g, ''));
   }
@@ -84,35 +94,37 @@ function prepareTab_(sh, header) {
 /* ---------- web app ---------- */
 
 /**
- * GET ?key=...[&since=YYYY-MM-DD]  returns data. Open it in a browser to test.
- * Without since, logs cover the last WINDOW_DAYS days.
+ * GET: a health check only. Open the Web app URL in a browser (no key, nothing
+ * added to the URL) and you should see {"ok":true,"app":"ruthines"}.
+ * It never returns data and never reads a key, so keys never go in URLs.
  */
-function doGet(e) {
+function doGet() {
   return respond_(function () {
-    const p = (e && e.parameter) || {};
-    checkKey_(p.key);
-    return withLock_(function () {
-      return { ok: true, data: readAll_(p.since) };
-    });
+    return { ok: true, app: 'ruthines', message: 'The script is running. The app sends its key in the request body.' };
   });
 }
 
 /**
- * POST body (sent as text/plain JSON):
- * { key, since?, ops: [
+ * POST body (sent as text/plain JSON). This is the only way to read or write data.
+ * { key, since?: 'YYYY-MM-DD' (default: WINDOW_DAYS ago), ops: [
  *   { type: 'checkin', date, routineId, done: true|false, updatedAt: ISO time on the device },
  *   { type: 'choreDone', choreId, date, loggedAt? },
  *   { type: 'choreUndo', choreId, date },
  *   { type: 'routine', routine: { id, name, icon, order, archived } },
  *   { type: 'chore', chore: { id, name, zone, every_days, archived } } ] }
- * Applies the ops in order and returns data like GET.
+ * Applies the ops in order (none = just read) and returns the data.
  * Each op result is reported in `results` ('written', 'kept-newer', 'exists', 'removed', 'none').
  */
 function doPost(e) {
   return respond_(function () {
-    const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    checkKey_(body.key);
+    let body;
+    try {
+      body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    } catch (err) {
+      body = {};
+    }
     return withLock_(function () {
+      checkKey_(body.key);
       const results = (body.ops || []).map(applyOp_);
       return { ok: true, results: results, data: readAll_(body.since) };
     });
@@ -334,9 +346,27 @@ function withLock_(fn) {
   }
 }
 
+/** Checks the key; counts wrong keys and locks every request after MAX_FAILS in a row. */
 function checkKey_(key) {
-  const secret = PropertiesService.getScriptProperties().getProperty('SECRET');
-  if (!secret || key !== secret) throw new Error('Wrong or missing key');
+  const props = PropertiesService.getScriptProperties();
+  const until = Number(props.getProperty('LOCKED_UNTIL') || 0);
+  if (until > Date.now()) {
+    throw new Error('Locked after too many wrong keys. Try again in ' +
+      Math.ceil((until - Date.now()) / 60000) + ' min, or run setup() in the script editor.');
+  }
+  const secret = props.getProperty('SECRET');
+  if (secret && typeof key === 'string' && key === secret) {
+    if (props.getProperty('FAILS')) props.deleteProperty('FAILS');
+    return;
+  }
+  const fails = Number(props.getProperty('FAILS') || 0) + 1;
+  if (fails >= MAX_FAILS) {
+    props.setProperty('LOCKED_UNTIL', String(Date.now() + LOCK_MINUTES * 60000));
+    props.deleteProperty('FAILS');
+  } else {
+    props.setProperty('FAILS', String(fails));
+  }
+  throw new Error('Wrong or missing key');
 }
 
 function respond_(fn) {

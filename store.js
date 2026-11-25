@@ -73,19 +73,24 @@ async function call(url, init) {
   return body;
 }
 
-/** GET: read data. since = YYYY-MM-DD to reach further back than 90 days. */
+/** Read data. since = YYYY-MM-DD to reach further back than 90 days. */
 export function fetchData(config, since) {
-  const u = new URL(config.url);
-  u.searchParams.set('key', config.key);
-  if (since) u.searchParams.set('since', since);
-  return call(u.toString(), { method: 'GET' });
+  return post(config, { ops: [], since });
 }
 
-/** POST: apply ops, then read data. text/plain keeps it a "simple" request (no CORS preflight). */
+/** Apply ops, then read data. */
 export function pushOps(config, ops) {
+  return post(config, { ops: ops.map(({ _id, ...op }) => op) });
+}
+
+/**
+ * Every call is a POST with the key inside the body, never in the URL.
+ * text/plain keeps it a "simple" request, so the browser sends no CORS preflight.
+ */
+function post(config, payload) {
   return call(config.url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ key: config.key, ops: ops.map(({ _id, ...op }) => op) }),
+    body: JSON.stringify({ key: config.key, ...payload }),
   });
 }

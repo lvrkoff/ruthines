@@ -29,6 +29,11 @@ The day starts at 04:00, so a tick at 01:00 counts for the day before. You can c
 4. When offline, the outbox waits. It's sent when the app opens, when you come back to it, when the connection
    returns, or every minute while unsent changes remain. The header shows `N unsent`.
 
+Every call is a POST with the key inside the request body, so the key never appears in a URL, browser history or
+Google's request logs. Opening the script URL in a browser (a GET) is only a health check: it shows
+`{"ok":true,"app":"ruthines",…}` and returns no data. After 10 wrong keys in a row the script refuses every request
+for 15 minutes; running `setup()` again in the script editor clears that.
+
 Each tick carries the time it was made on the device, and the script keeps the newer edit. A chore is logged at most
 once per day, and Undo removes only that day's entry. Progress' "All time" range fetches the full history on demand.
 
@@ -74,7 +79,7 @@ Open the Pages URL, then enter the script URL and key on the Connect screen.
 ## Tests
 
 ```
-node --test tests/logic.test.mjs   # unit tests for logic.js
+node --test tests/logic.test.mjs tests/apps-script.test.mjs   # unit tests: app logic, and Code.gs on a fake Sheet
 node tests/e2e.mjs                 # headless Chromium + the real Code.gs on a fake Sheet
 ```
 

@@ -57,7 +57,7 @@ export function createBackend({ tz = 'UTC' } = {}) {
   };
   const ctx = {
     SpreadsheetApp: { getActive: () => ss },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props.get(k) ?? null, setProperty: (k, v) => props.set(k, v) }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props.get(k) ?? null, setProperty: (k, v) => props.set(k, v), deleteProperty: (k) => props.delete(k) }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     ContentService: {
       MimeType: { JSON: 'json' },
@@ -81,6 +81,8 @@ export function createBackend({ tz = 'UTC' } = {}) {
   return {
     key,
     sheets,
+    props,
+    setup: () => ctx.setup(),
     get: (params) => JSON.parse(ctx.doGet({ parameter: params }).text),
     post: (body) => JSON.parse(ctx.doPost({ postData: { contents: body } }).text),
     addChore: (name, zone, every) => {
