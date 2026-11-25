@@ -14,7 +14,7 @@ The bottom bar (a sidebar on a computer) has **Today**, **Week** and **Progress*
 
 | Screen | What it does |
 |---|---|
-| Today | Today's habits as tick rows, plus chores that are overdue or due within 2 days, with Done and Undo. Arrows go back to earlier days. |
+| Today | Today's habits as tick rows, plus chores that are overdue or due within 2 days, with Done and Undo. Arrows go back to earlier days. Ruth appears in a card when a habit reaches a 7, 30 or 100-day streak, or when every habit is ticked; × hides it for the day. |
 | Week | Top: habits × Mon–Sun grid for catching up, with a weekly count per habit. On a phone about four days show and the rest scroll sideways; it opens on today. Tap a habit's name for its streak, last done and the last 30 days. Bottom: every chore as a list, worst first, with zone filters and Done/Undo. Tap a chore for its interval and recent dates. |
 | Progress | Ticks per week, plus rate and streak per habit. CSV export of habits and chores, and a JSON backup. |
 | Edit habits | Reached from **Edit** on Today or Week. Add, rename, set the emoji, reorder, archive and restore habits. |
@@ -57,6 +57,7 @@ logic.js               pure logic: dates, merging the outbox, chore status, stre
 store.js               IndexedDB storage and calls to the Apps Script
 demo.js                sample data and an in-browser stand-in for the script (demo mode)
 fonts/                 Manrope (SIL Open Font License 1.1)
+ruth/                  Ruth's animated cards (WebP), each with a still frame for reduced motion
 tools/build-demo.mjs   builds the one-page demo
 style.css              plain styling, light and dark
 sw.js                  service worker: keeps the app's files for offline use

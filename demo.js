@@ -34,6 +34,13 @@ function sample(today) {
       if (rand() < ODDS[i] * ramp) Checkins.push({ date: d, routine_id: r.id, done: '1', updated_at: d + 'T20:00:00.000Z' });
     });
   }
+  // Walk 30 minutes is on a 6-day run, so ticking it today shows the 7-day streak card.
+  for (let k = 1; k <= 7; k++) {
+    const d = L.addDays(today, -k);
+    const i = Checkins.findIndex((c) => c.date === d && c.routine_id === 'r3');
+    if (i >= 0) Checkins.splice(i, 1);
+    if (k <= 6) Checkins.push({ date: d, routine_id: 'r3', done: '1', updated_at: d + 'T20:00:00.000Z' });
+  }
   // Today: a few already ticked.
   ['r0', 'r1'].forEach((id) => Checkins.push({ date: today, routine_id: id, done: '1', updated_at: today + 'T08:00:00.000Z' }));
   const ChoreLog = [];

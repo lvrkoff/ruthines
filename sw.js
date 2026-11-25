@@ -1,7 +1,7 @@
 // Offline support: keeps the app's own files on the device.
 // Bump VERSION whenever any app file changes, so devices pick up the update.
 // Requests to the Apps Script (data) are never cached here.
-const VERSION = 'ruthines-1.4.1';
+const VERSION = 'ruthines-1.6.0';
 const FILES = [
   './',
   './index.html',
@@ -18,6 +18,10 @@ const FILES = [
   './icons/icon-maskable-512.png',
   './icons/favicon.svg',
   './icons/favicon-32.png',
+  './ruth/done.webp',
+  './ruth/done-still.webp',
+  './ruth/streak.webp',
+  './ruth/streak-still.webp',
 ];
 
 self.addEventListener('install', (event) => {
