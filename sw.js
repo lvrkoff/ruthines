@@ -1,7 +1,7 @@
 // Offline support: keeps the app's own files on the device.
 // Bump VERSION whenever any app file changes, so devices pick up the update.
 // Requests to the Apps Script (data) are never cached here.
-const VERSION = 'ruthines-1.2.0';
+const VERSION = 'ruthines-1.3.0';
 const FILES = [
   './',
   './index.html',
@@ -15,6 +15,9 @@ const FILES = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',
+  './icons/icon-maskable-512.png',
+  './icons/favicon.svg',
+  './icons/favicon-32.png',
 ];
 
 self.addEventListener('install', (event) => {

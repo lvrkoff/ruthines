@@ -20,6 +20,7 @@ A single-user habit and household chores tracker. It's an installable web app
 
 **Look.** Manrope with a teal accent, in light and dark following the system. Habit emoji show only when
 *every* active habit has one; otherwise none show, and Settings names the habits still missing one.
+The logo is a teal sprout on white; `icons/icon.svg` is the source for the PNG icons.
 
 **Demo.** Open the app with `?demo` (or tap *Try it with sample data* on the Connect screen) to use it with sample
 habits and chores. Nothing is sent anywhere. `node tools/build-demo.mjs demo.html` builds the same demo as a single
