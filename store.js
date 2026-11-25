@@ -1,3 +1,6 @@
+import { DEMO_URL, demoPost } from './demo.js';
+import { logicalDay } from './logic.js';
+
 // Device storage (IndexedDB) and sync with the Apps Script web app.
 // The device keeps: config (script URL + key), the last synced data,
 // the outbox of unsent changes, and per-device settings.
@@ -88,6 +91,7 @@ export function pushOps(config, ops) {
  * text/plain keeps it a "simple" request, so the browser sends no CORS preflight.
  */
 function post(config, payload) {
+  if (config.url === DEMO_URL) return demoPost(payload, logicalDay());
   return call(config.url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },

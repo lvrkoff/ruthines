@@ -46,7 +46,7 @@ page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => m.type() === 'error' && !m.text().includes('ERR_INTERNET_DISCONNECTED') && errors.push(m.text()));
 
 const rows = (tab) => backend.sheets.get(tab).getDataRange().getDisplayValues().slice(1).filter((r) => r.some(Boolean));
-const synced = () => page.waitForFunction(() => /^Synced/.test(document.getElementById('status')?.textContent || ''));
+const synced = () => page.waitForFunction(() => /^Synced/.test(document.querySelector('.sync-text')?.textContent || ''));
 
 try {
   await page.goto(APP);
@@ -59,7 +59,7 @@ try {
   await page.fill('input[name=key]', backend.key);
   await page.click('button[type=submit]');
   await page.getByRole('heading', { name: 'Today' }).waitFor();
-  assert.equal(await page.locator('ul.habits li').count(), 4);
+  assert.equal(await page.locator('.screen-today .habit').count(), 4);
   console.log('ok connect: 4 habits');
 
   // 2. Tick a habit; it reaches the Sheet.
@@ -86,9 +86,9 @@ try {
   // 3. Chores typed into the Sheet by hand show up after a sync.
   backend.addChore('Clean fridge', 'Kitchen', 7);
   backend.addChore('Wash towels', 'Bathroom', 3);
-  await page.click('#status');
+  await page.locator('.topbar .sync-btn').click();
   await page.getByText('Clean fridge').waitFor();
-  assert.equal(await page.locator('ul.chores li').count(), 2);
+  assert.equal(await page.locator('.screen-today .chore').count(), 2);
   await page.locator('li.chore', { hasText: 'Clean fridge' }).getByRole('button', { name: 'Done' }).click();
   await synced();
   assert.equal(rows('ChoreLog').length, 1);
@@ -104,11 +104,11 @@ try {
   online = false;
   await context.setOffline(true);
   await page.getByLabel('🚶 Walk').check();
-  await page.waitForFunction(() => /1 unsent/.test(document.getElementById('status').textContent));
+  await page.waitForFunction(() => /1 unsent/.test(document.querySelector('.sync-text').textContent));
   await page.reload();
   await page.getByRole('heading', { name: 'Today' }).waitFor();
   assert.equal(await page.getByLabel('🚶 Walk').isChecked(), true);
-  console.log('ok offline reload keeps tick:', await page.locator('#status').textContent());
+  console.log('ok offline reload keeps tick:', await page.locator('.sync-text').textContent());
   if (shots) await page.screenshot({ path: path.join(shots, 'today-offline.png') });
   online = true;
   await context.setOffline(false);
@@ -138,8 +138,8 @@ try {
   console.log('ok tick on previous day');
 
   // 7. Week grid.
-  await page.click('a[href="#week"]');
-  await page.getByRole('heading', { name: 'This week' }).waitFor();
+  await page.locator('a[href="#week"]:visible').first().click();
+  await page.getByRole('heading', { name: /^W\d+$/ }).waitFor();
   assert.equal(await page.locator('table.grid tbody tr').count(), 4);
   const weekChecked = await page.locator('table.grid tbody input:checked').count();
   assert.equal(weekChecked >= 2, true);
@@ -147,12 +147,12 @@ try {
   console.log('ok week grid, checked cells:', weekChecked);
 
   // 8. Chores screen: add a chore with a last-done date.
-  await page.click('a[href="#chores"]');
-  await page.getByText('Add a chore').click();
+  await page.locator('a[href="#chores"]:visible').first().click();
+  await page.getByRole('button', { name: '+ Add chore' }).click();
   await page.getByPlaceholder('e.g. Clean the fridge').fill('Descale kettle');
-  await page.getByPlaceholder('e.g. Kitchen').fill('Kitchen');
-  await page.locator('details.add input[type=number]').fill('30');
-  await page.locator('details.add input[type=date]').fill('2026-11-01');
+  await page.locator('.add-form').getByLabel('Zone').fill('Kitchen');
+  await page.locator('.add-form input[type=number]').fill('30');
+  await page.locator('.add-form input[type=date]').fill('2026-11-01');
   await page.getByRole('button', { name: 'Add chore' }).click();
   await synced();
   assert.ok(rows('Chores').some((r) => r[1] === 'Descale kettle' && r[3] === '30'));
@@ -161,11 +161,14 @@ try {
   console.log('ok add chore');
 
   // 9. Settings: rename, reorder, add, archive a habit.
-  await page.click('a[href="#settings"]');
-  await page.locator('.edit-list li').first().locator('input:not(.icon)').fill('Drink more water');
-  await page.locator('.edit-list li').first().locator('input:not(.icon)').press('Tab');
+  await page.locator('a[href="#settings"]:visible').first().click();
+  const editHabit = (name) => page.locator('li.habit-edit', { hasText: name }).getByRole('button', { name: 'Edit' }).click();
+  await editHabit('Drink water');
+  await page.locator('li.habit-edit.open input.grow').fill('Drink more water');
+  await page.locator('li.habit-edit.open input.grow').press('Tab');
   await synced();
   assert.ok(rows('Routines').some((r) => r[1] === 'Drink more water'));
+  await editHabit('Read');
   await page.getByRole('button', { name: 'Move Read up' }).click();
   await synced();
   const order = rows('Routines').sort((a, b) => a[3] - b[3]).map((r) => r[1]);
@@ -174,6 +177,7 @@ try {
   await page.getByRole('button', { name: 'Add habit' }).click();
   await synced();
   assert.ok(rows('Routines').some((r) => r[1] === 'Stretch' && r[3] === '5'));
+  await editHabit('Tidy desk');
   await page.getByRole('button', { name: 'Archive Tidy desk' }).click();
   await synced();
   assert.ok(rows('Routines').find((r) => r[1] === 'Tidy desk')[4]);
@@ -181,28 +185,28 @@ try {
   console.log('ok settings: rename, reorder, add, archive');
 
   // 10. Progress and CSV export.
-  await page.click('a[href="#progress"]');
+  await page.locator('a[href="#progress"]:visible').first().click();
   await page.getByRole('heading', { name: 'Ticks per week' }).waitFor();
   const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Habits CSV' }).click()]);
   const csv = fs.readFileSync(await dl.path(), 'utf8');
   assert.match(csv, /^date,habit,done\r\n/);
   assert.ok(csv.includes(',Read,1'));
-  await page.selectOption('select', 'all');
-  await page.waitForFunction(() => !document.body.textContent.includes('Loading full history'));
+  await page.getByRole('button', { name: 'All', exact: true }).click();
+  await page.waitForFunction(() => !document.body.textContent.includes('Loading older history'));
   if (shots) await page.screenshot({ path: path.join(shots, 'progress-phone.png'), fullPage: true });
   console.log('ok progress + CSV (' + csv.trim().split('\n').length + ' lines)');
 
   // 11. Desktop layout.
   if (shots) {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.click('a[href="#today"]');
+    await page.locator('a[href="#today"]:visible').first().click();
     await page.getByRole('heading', { name: 'Today' }).waitFor();
     await page.evaluate(() => scrollTo(0, 0));
     await page.screenshot({ path: path.join(shots, 'today-desktop.png') });
   }
 
   // 12. Disconnect clears the device.
-  await page.click('a[href="#settings"]');
+  await page.locator('a[href="#settings"]:visible').first().click();
   page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: 'Disconnect this device' }).click();
   await page.locator('input[name=url]').waitFor();
