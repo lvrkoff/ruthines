@@ -1,7 +1,7 @@
 // Offline support: keeps the app's own files on the device.
 // Bump VERSION whenever any app file changes, so devices pick up the update.
 // Requests to the Apps Script (data) are never cached here.
-const VERSION = 'ruthines-1.6.0';
+const VERSION = 'ruthines-1.6.1';
 const FILES = [
   './',
   './index.html',
@@ -12,12 +12,12 @@ const FILES = [
   './fonts/manrope-latin-wght-normal.woff2',
   './style.css',
   './manifest.webmanifest',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/apple-touch-icon.png',
-  './icons/icon-maskable-512.png',
-  './icons/favicon.svg',
-  './icons/favicon-32.png',
+  './icons/sprout-192.png',
+  './icons/sprout-512.png',
+  './icons/sprout-180.png',
+  './icons/sprout-maskable-512.png',
+  './icons/sprout.svg',
+  './icons/sprout-32.png',
   './ruth/done.webp',
   './ruth/done-still.webp',
   './ruth/streak.webp',
