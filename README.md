@@ -23,7 +23,9 @@ The bottom bar (a sidebar on a computer) has **Today**, **Week** and **Progress*
 
 **Look.** Manrope with a teal accent, in light and dark following the system. Habit emoji show only when
 *every* active habit has one; otherwise none show, and Edit habits names the habits still missing one.
-The logo is a teal sprout on white; `icons/icon.svg` is the source for the PNG icons.
+The logo is a teal sprout on white; `icons/icon.svg` is the source for the PNG icons. If you change the icons, give the files new names
+(and update `index.html`, `manifest.webmanifest` and `sw.js`): browsers and phones keep showing an icon they've
+already fetched until its URL changes.
 
 **Demo.** Open the app with `?demo` (or tap *Try it with sample data* on the Connect screen) to use it with sample
 habits and chores. Nothing is sent anywhere. `node tools/build-demo.mjs demo.html` builds the same demo as a single
